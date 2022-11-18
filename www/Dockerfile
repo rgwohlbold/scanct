@@ -20,7 +20,10 @@ FROM debian:buster-slim AS runner
 COPY --from=builder /tmp/nginx.deb /tmp
 
 RUN apt-get update -y \
-        && apt-get install --no-install-recommends -y libssl1.1 lsb-base \
+        && apt-get install --no-install-recommends -y lsb-base \
+        && apt-get install wget -y \
+        && wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1n-0+deb10u3_amd64.deb \
+        && dpkg -i libssl1.1_1.1.1n-0+deb10u3_amd64.deb \
         && dpkg -i /tmp/nginx.deb \
         && apt-mark hold nginx
 
