@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/go-github/github"
-	"golang.org/x/oauth2"
+	"github.com/xanzy/go-gitlab"
 )
 
 type Session struct {
@@ -22,12 +21,12 @@ type Session struct {
 	Options          *Options
 	Config           *Config
 	Signatures       []Signature
-	Repositories     chan GitResource
+	Repositories     chan *gitlab.Project
 	Gists            chan string
 	Comments         chan string
 	Context          context.Context
-	Clients          chan *GitHubClientWrapper
-	ExhaustedClients chan *GitHubClientWrapper
+	Clients          chan *GitLabClientWrapper
+	ExhaustedClients chan *GitLabClientWrapper
 	CsvWriter        *csv.Writer
 }
 
@@ -43,7 +42,7 @@ func (s *Session) Start() {
 	s.InitLogger()
 	s.InitThreads()
 	s.InitSignatures()
-	s.InitGitHubClients()
+	s.InitGitLabClients()
 	s.InitCsvWriter()
 }
 
@@ -57,50 +56,31 @@ func (s *Session) InitSignatures() {
 	s.Signatures = GetSignatures(s)
 }
 
-func (s *Session) InitGitHubClients() {
-	if len(*s.Options.Local) <= 0 {
-		chanSize := *s.Options.Threads * (len(s.Config.GitHubAccessTokens) + 1)
-		s.Clients = make(chan *GitHubClientWrapper, chanSize)
-		s.ExhaustedClients = make(chan *GitHubClientWrapper, chanSize)
-		for _, token := range s.Config.GitHubAccessTokens {
-			ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-			tc := oauth2.NewClient(s.Context, ts)
+func (s *Session) InitGitLabClients() {
+	s.Clients = make(chan *GitLabClientWrapper, 1)
 
-			client := github.NewClient(tc)
-			client.UserAgent = fmt.Sprintf("%s v%s", Name, Version)
-			_, _, err := client.Users.Get(s.Context, "")
+	client, err := gitlab.NewClient(s.Config.GitLabApiToken, gitlab.WithBaseURL(s.Config.GitLabApiEndpoint))
 
-			if err != nil {
-				if _, ok := err.(*github.ErrorResponse); ok {
-					s.Log.Warn("Failed to validate token %s[..]: %s", token[:10], err)
-					continue
-				}
-			}
-
-			for i := 0; i <= *s.Options.Threads; i++ {
-				s.Clients <- &GitHubClientWrapper{client, token, time.Now().Add(-1 * time.Second)}
-			}
-		}
-
-		if len(s.Clients) < 1 {
-			s.Log.Fatal("No valid GitHub tokens provided. Quitting!")
-		}
+	if err != nil {
+		s.Log.Fatal("Could not create GitLab client.")
 	}
+
+	s.Clients <- &GitLabClientWrapper{client, s.Config.GitLabApiToken, time.Now().Add(-1 * time.Second)}
 }
 
-func (s *Session) GetClient() *GitHubClientWrapper {
+func (s *Session) GetClient() *GitLabClientWrapper {
 	for {
 		select {
 
 		case client := <-s.Clients:
-			s.Log.Debug("Using client with token: %s", client.Token[:10])
+			s.Log.Debug("Using client with token: %s", client.Token)
 			return client
 
 		case client := <-s.ExhaustedClients:
 			sleepTime := time.Until(client.RateLimitedUntil)
 			s.Log.Warn("All GitHub tokens exhausted/rate limited. Sleeping for %s", sleepTime.String())
 			time.Sleep(sleepTime)
-			s.Log.Debug("Returning client %s to pool", client.Token[:10])
+			s.Log.Debug("Returning client %s to pool", client.Token)
 			s.FreeClient(client)
 
 		default:
@@ -111,9 +91,9 @@ func (s *Session) GetClient() *GitHubClientWrapper {
 	}
 }
 
-// FreeClient returns the GitHub Client to the pool of available,
+// FreeClient returns the GitLab Client to the pool of available,
 // non-rate-limited channel of clients in the session
-func (s *Session) FreeClient(client *GitHubClientWrapper) {
+func (s *Session) FreeClient(client *GitLabClientWrapper) {
 	if client.RateLimitedUntil.After(time.Now()) {
 		s.ExhaustedClients <- client
 	} else {
@@ -163,7 +143,7 @@ func GetSession() *Session {
 	sessionSync.Do(func() {
 		session = &Session{
 			Context:      context.Background(),
-			Repositories: make(chan GitResource, 1000),
+			Repositories: make(chan *gitlab.Project, 1000),
 			Gists:        make(chan string, 100),
 			Comments:     make(chan string, 1000),
 		}

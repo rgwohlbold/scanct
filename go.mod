@@ -1,4 +1,4 @@
-module github.com/eth0izzle/shhgit
+module gitlab.hpi.de/lukas.radermacher/shhgit-for-gitlab
 
 go 1.14
 

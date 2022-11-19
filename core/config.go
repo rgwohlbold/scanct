@@ -12,7 +12,8 @@ import (
 )
 
 type Config struct {
-	GitHubAccessTokens           []string          `yaml:"github_access_tokens"`
+	GitLabApiEndpoint            string            `yaml:"gitlab_api_endpoint"`
+	GitLabApiToken               string            `yaml:"gitlab_api_token"`
 	Webhook                      string            `yaml:"webhook,omitempty"`
 	WebhookPayload               string            `yaml:"webhook_payload,omitempty"`
 	BlacklistedStrings           []string          `yaml:"blacklisted_strings"`
@@ -62,12 +63,8 @@ func ParseConfig(options *Options) (*Config, error) {
 		return config, err
 	}
 
-	if len(*options.Local) <= 0 && (len(config.GitHubAccessTokens) < 1 || strings.TrimSpace(strings.Join(config.GitHubAccessTokens, "")) == "") {
-		return config, errors.New("You need to provide at least one GitHub Access Token. See https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line")
-	}
-
-	for i := 0; i < len(config.GitHubAccessTokens); i++ {
-		config.GitHubAccessTokens[i] = os.ExpandEnv(config.GitHubAccessTokens[i])
+	if strings.TrimSpace(config.GitLabApiEndpoint) == "" {
+		return config, errors.New("You need to provide an GitLab API endpoint to connect to.")
 	}
 
 	if len(config.Webhook) > 0 {

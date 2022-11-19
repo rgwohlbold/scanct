@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eth0izzle/shhgit/core"
 	"github.com/fatih/color"
+	"gitlab.hpi.de/lukas.radermacher/shhgit-for-gitlab/core"
 )
 
 type MatchEvent struct {
@@ -29,6 +29,16 @@ type MatchEvent struct {
 var session = core.GetSession()
 
 func ProcessRepositories() {
+	/* for {
+		select {
+		case repository := <-session.Repositories:
+			session.Log.Debug("Processing Repository %v", repository.Name)
+			processRepositoryOrGist(repository.HTTPURLToRepo, repository.DefaultBranch, repository.StarCount, core.GITHUB_SOURCE)
+		default:
+			//
+		}
+	} */
+
 	threadNum := *session.Options.Threads
 
 	for i := 0; i < threadNum; i++ {
@@ -40,19 +50,11 @@ func ProcessRepositories() {
 
 				repository := <-session.Repositories
 
-				repo, err := core.GetRepository(session, repository.Id)
-
-				if err != nil {
-					session.Log.Warn("Failed to retrieve repository %d: %s", repository.Id, err)
-					continue
-				}
-
-				if repo.GetPermissions()["pull"] &&
-					uint(repo.GetStargazersCount()) >= *session.Options.MinimumStars &&
-					uint(repo.GetSize()) < *session.Options.MaximumRepositorySize {
-
-					processRepositoryOrGist(repo.GetCloneURL(), repository.Ref, repo.GetStargazersCount(), core.GITHUB_SOURCE)
-				}
+				// if uint(repository.StarCount) >= *session.Options.MinimumStars &&
+				// 	uint(repository.Statistics.RepositorySize) < *session.Options.MaximumRepositorySize {
+				session.Log.Debug("Processing Repository %v", repository.Name)
+				processRepositoryOrGist(repository.HTTPURLToRepo, repository.DefaultBranch, repository.StarCount, core.GITHUB_SOURCE)
+				// }
 			}
 		}(i)
 	}
@@ -111,6 +113,7 @@ func processRepositoryOrGist(url string, ref string, stars int, source core.GitR
 }
 
 func checkSignatures(dir string, url string, stars int, source core.GitResourceType) (matchedAny bool) {
+	session.Log.Debug("Checking signatures for %v\n", dir)
 	for _, file := range core.GetMatchingFiles(dir) {
 		var (
 			matches          []string
@@ -228,10 +231,10 @@ func main() {
 		go ProcessRepositories()
 		go ProcessComments()
 
-		if *session.Options.ProcessGists {
-			go core.GetGists(session)
-			go ProcessGists()
-		}
+		// if *session.Options.ProcessGists {
+		// 	go core.GetGists(session)
+		// 	go ProcessGists()
+		// }
 
 		spinny := core.ShowSpinner()
 		select {}

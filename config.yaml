@@ -1,5 +1,5 @@
-github_access_tokens:
-  - ''
+gitlab_api_endpoint: 'https://gitup.uni-potsdam.de/api/v4'
+gitlab_api_token: ''
 webhook: '' # URL to which the payload is POSTed
 
 # This default payload will work for Slack and MatterMost.
@@ -465,3 +465,6 @@ signatures:
   - part:  'path'
     regex: '\.?mozilla[\\\/]firefox[\\\/]logins.json$'
     name: 'Firefox saved password collection (can be decrypted using keys4.db)'
+  # - part:  'contents'
+  #   regex: '\SFB 1287'
+  #   name: 'TEST'
