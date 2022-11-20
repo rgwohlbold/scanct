@@ -13,7 +13,7 @@ type GitLabClientWrapper struct {
 	RateLimitedUntil time.Time
 }
 
-const maxPagesCount = 1    // -1: no limit
+const maxPagesCount = -1   // -1: no limit
 const maxItemCountPP = 100 // 100 is the maximum defined by the GitLab API
 
 func GetRepositories(session *Session, wg *sync.WaitGroup) {
