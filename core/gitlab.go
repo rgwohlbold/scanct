@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sync"
 	"time"
 
 	"github.com/xanzy/go-gitlab"
@@ -12,15 +13,17 @@ type GitLabClientWrapper struct {
 	RateLimitedUntil time.Time
 }
 
-const maxPagesCount = 10
-const maxItemCountPP = 100
+const maxPagesCount = -1   // -1: no limit
+const maxItemCountPP = 100 // 100 is the maximum defined by the GitLab API
 
-func GetRepositories(session *Session) {
+func GetRepositories(session *Session, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	client := session.GetClient()
 
-	for i := 0; i < maxPagesCount; i++ {
+	for page := 1; page != 0 && (maxPagesCount == -1 || page <= maxPagesCount); {
 		var lo = &gitlab.ListOptions{
-			Page:    i,
+			Page:    page,
 			PerPage: maxItemCountPP,
 		}
 
@@ -29,7 +32,7 @@ func GetRepositories(session *Session) {
 			ListOptions: *lo,
 		}
 
-		var projects, _, listError = client.Projects.ListProjects(o, nil)
+		var projects, res, listError = client.Projects.ListProjects(o, nil)
 
 		if listError != nil {
 			session.Log.Fatal("Error: %v", listError)
@@ -40,5 +43,9 @@ func GetRepositories(session *Session) {
 			session.Log.Debug("New Repo found >> %v\n", p.Name)
 			session.Repositories <- p
 		}
+
+		page = res.NextPage
 	}
+
+	close(session.Repositories)
 }

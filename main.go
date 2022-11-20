@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -30,27 +31,27 @@ type MatchEvent struct {
 
 var session = core.GetSession()
 
-func ProcessRepositories() {
-	/* for {
-		select {
-		case repository := <-session.Repositories:
-			session.Log.Debug("Processing Repository %v", repository.Name)
-			processRepositoryOrGist(repository.HTTPURLToRepo, repository.DefaultBranch, repository.StarCount, core.GITHUB_SOURCE)
-		default:
-			//
-		}
-	} */
+func ProcessRepositories(wg *sync.WaitGroup) {
+	defer wg.Done()
 
+	var innerWg sync.WaitGroup
 	threadNum := *session.Options.Threads
+	innerWg.Add(threadNum)
 
 	for i := 0; i < threadNum; i++ {
 		go func(tid int) {
+			defer innerWg.Done()
+
 			for {
 				timeout := time.Duration(*session.Options.CloneRepositoryTimeout) * time.Second
 				_, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()
 
-				repository := <-session.Repositories
+				repository, open := <-session.Repositories
+
+				if !open {
+					break
+				}
 
 				// if uint(repository.StarCount) >= *session.Options.MinimumStars &&
 				// 	uint(repository.Statistics.RepositorySize) < *session.Options.MaximumRepositorySize {
@@ -60,6 +61,8 @@ func ProcessRepositories() {
 			}
 		}(i)
 	}
+
+	innerWg.Wait()
 }
 
 func ProcessGists() {
@@ -214,13 +217,16 @@ func main() {
 		}
 		os.Exit(rc)
 	} else {
+		var wg sync.WaitGroup
+
 		if *session.Options.SearchQuery != "" {
 			session.Log.Important("Search Query '%s' given. Only returning matching results.", *session.Options.SearchQuery)
 		}
 
-		go core.GetRepositories(session)
-		go ProcessRepositories()
-		go ProcessComments()
+		wg.Add(2)
+		go core.GetRepositories(session, &wg)
+		go ProcessRepositories(&wg)
+		// go ProcessComments()
 
 		// if *session.Options.ProcessGists {
 		// 	go core.GetGists(session)
@@ -228,7 +234,7 @@ func main() {
 		// }
 
 		spinny := core.ShowSpinner()
-		select {}
+		wg.Wait()
 		spinny()
 	}
 }
