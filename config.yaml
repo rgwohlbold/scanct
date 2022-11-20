@@ -465,6 +465,3 @@ signatures:
   - part:  'path'
     regex: '\.?mozilla[\\\/]firefox[\\\/]logins.json$'
     name: 'Firefox saved password collection (can be decrypted using keys4.db)'
-  # - part:  'contents'
-  #   regex: '\SFB 1287'
-  #   name: 'TEST'
