@@ -1,19 +1,21 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/fatih/color"
+	"github.com/zricethezav/gitleaks/v8/detect"
+	"github.com/zricethezav/gitleaks/v8/report"
 	"gitlab.hpi.de/lukas.radermacher/shhgit-for-gitlab/core"
 )
 
@@ -112,92 +114,81 @@ func processRepositoryOrGist(url string, ref string, stars int, source core.GitR
 	}
 }
 
-func checkSignatures(dir string, url string, stars int, source core.GitResourceType) (matchedAny bool) {
-	session.Log.Debug("Checking signatures for %v\n", dir)
-	for _, file := range core.GetMatchingFiles(dir) {
-		var (
-			matches          []string
-			relativeFileName string
-		)
-		if strings.Contains(dir, *session.Options.TempDirectory) {
-			relativeFileName = strings.Replace(file.Path, *session.Options.TempDirectory, "", -1)
-		} else {
-			relativeFileName = strings.Replace(file.Path, dir, "", -1)
-		}
+func printFinding(f report.Finding) {
+	// trim all whitespace and tabs from the line
+	f.Line = strings.TrimSpace(f.Line)
+	// trim all whitespace and tabs from the secret
+	f.Secret = strings.TrimSpace(f.Secret)
+	// trim all whitespace and tabs from the match
+	f.Match = strings.TrimSpace(f.Match)
 
-		if *session.Options.SearchQuery != "" {
-			queryRegex := regexp.MustCompile(*session.Options.SearchQuery)
-			for _, match := range queryRegex.FindAllSubmatch(file.Contents, -1) {
-				matches = append(matches, string(match[0]))
-			}
+	matchInLineIDX := strings.Index(f.Line, f.Match)
+	secretInMatchIdx := strings.Index(f.Match, f.Secret)
 
-			if matches != nil {
-				count := len(matches)
-				m := strings.Join(matches, ", ")
-				session.Log.Important("[%s] %d %s for %s in file %s: %s", url, count, core.Pluralize(count, "match", "matches"), color.GreenString("Search Query"), relativeFileName, color.YellowString(m))
-				session.WriteToCsv([]string{url, "Search Query", relativeFileName, m})
-			}
-		} else {
-			for _, signature := range session.Signatures {
-				if matched, part := signature.Match(file); matched {
-					if part == core.PartContents {
-						if matches = signature.GetContentsMatches(file.Contents); len(matches) > 0 {
-							count := len(matches)
-							m := strings.Join(matches, ", ")
-							publish(&MatchEvent{Source: source, Url: url, Matches: matches, Signature: signature.Name(), File: relativeFileName, Stars: stars})
-							matchedAny = true
-
-							session.Log.Important("[%s] %d %s for %s in file %s: %s", url, count, core.Pluralize(count, "match", "matches"), color.GreenString(signature.Name()), relativeFileName, color.YellowString(m))
-							session.WriteToCsv([]string{url, signature.Name(), relativeFileName, m})
-						}
-					} else {
-						if *session.Options.PathChecks {
-							publish(&MatchEvent{Source: source, Url: url, Matches: matches, Signature: signature.Name(), File: relativeFileName, Stars: stars})
-							matchedAny = true
-
-							session.Log.Important("[%s] Matching file %s for %s", url, color.YellowString(relativeFileName), color.GreenString(signature.Name()))
-							session.WriteToCsv([]string{url, signature.Name(), relativeFileName, ""})
-						}
-
-						if *session.Options.EntropyThreshold > 0 && file.CanCheckEntropy() {
-							scanner := bufio.NewScanner(bytes.NewReader(file.Contents))
-
-							for scanner.Scan() {
-								line := scanner.Text()
-
-								if len(line) > 6 && len(line) < 100 {
-									entropy := core.GetEntropy(line)
-
-									if entropy >= *session.Options.EntropyThreshold {
-										blacklistedMatch := false
-
-										for _, blacklistedString := range session.Config.BlacklistedStrings {
-											if strings.Contains(strings.ToLower(line), strings.ToLower(blacklistedString)) {
-												blacklistedMatch = true
-											}
-										}
-
-										if !blacklistedMatch {
-											publish(&MatchEvent{Source: source, Url: url, Matches: []string{line}, Signature: "High entropy string", File: relativeFileName, Stars: stars})
-											matchedAny = true
-
-											session.Log.Important("[%s] Potential secret in %s = %s", url, color.YellowString(relativeFileName), color.GreenString(line))
-											session.WriteToCsv([]string{url, "High entropy string", relativeFileName, line})
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if !matchedAny && len(*session.Options.Local) <= 0 {
-			os.Remove(file.Path)
-		}
+	start := f.Line[0:matchInLineIDX]
+	startMatchIdx := 0
+	if matchInLineIDX > 20 {
+		startMatchIdx = matchInLineIDX - 20
+		start = "..." + f.Line[startMatchIdx:matchInLineIDX]
 	}
-	return
+
+	matchBeginning := lipgloss.NewStyle().SetString(f.Match[0:secretInMatchIdx]).Foreground(lipgloss.Color("#f5d445"))
+	secret := lipgloss.NewStyle().SetString(f.Secret).
+		Bold(true).
+		Italic(true).
+		Foreground(lipgloss.Color("#f05c07"))
+	matchEnd := lipgloss.NewStyle().SetString(f.Match[secretInMatchIdx+len(f.Secret):]).Foreground(lipgloss.Color("#f5d445"))
+	lineEnd := f.Line[matchInLineIDX+len(f.Match):]
+	if len(f.Secret) > 100 {
+		secret = lipgloss.NewStyle().SetString(f.Secret[0:100] + "...").
+			Bold(true).
+			Italic(true).
+			Foreground(lipgloss.Color("#f05c07"))
+	}
+	if len(lineEnd) > 20 {
+		lineEnd = lineEnd[0:20] + "..."
+	}
+
+	finding := fmt.Sprintf("%s%s%s%s%s\n", strings.TrimPrefix(strings.TrimLeft(start, " "), "\n"), matchBeginning, secret, matchEnd, lineEnd)
+	fmt.Printf("%-12s %s", "Finding:", finding)
+	fmt.Printf("%-12s %s\n", "Secret:", secret)
+	fmt.Printf("%-12s %s\n", "RuleID:", f.RuleID)
+	fmt.Printf("%-12s %f\n", "Entropy:", f.Entropy)
+	if f.File == "" {
+		fmt.Println("")
+		return
+	}
+	fmt.Printf("%-12s %s\n", "File:", f.File)
+	fmt.Printf("%-12s %d\n", "Line:", f.StartLine)
+	if f.Commit == "" {
+		fmt.Printf("%-12s %s\n", "Fingerprint:", f.Fingerprint)
+		fmt.Println("")
+		return
+	}
+	fmt.Printf("%-12s %s\n", "Commit:", f.Commit)
+	fmt.Printf("%-12s %s\n", "Author:", f.Author)
+	fmt.Printf("%-12s %s\n", "Email:", f.Email)
+	fmt.Printf("%-12s %s\n", "Date:", f.Date)
+	fmt.Printf("%-12s %s\n", "Fingerprint:", f.Fingerprint)
+	fmt.Println("")
+}
+
+func checkSignatures(dir string, url string, stars int, source core.GitResourceType) (matchedAny bool) {
+	detector, err := detect.NewDetectorDefaultConfig()
+	if err != nil {
+		session.Log.Error("Error while creating detector: %s", err.Error())
+		os.Exit(1)
+	}
+	findings, err := detector.DetectGit(dir, "", detect.DetectType)
+	if err != nil {
+		session.Log.Error("Error while detecting files: %s", err.Error())
+		return
+	}
+	for _, finding := range findings {
+		printFinding(finding)
+	}
+
+	return len(findings) != 0
 }
 
 func publish(event *MatchEvent) {

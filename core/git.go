@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 )
 
 type GitResourceType int
@@ -36,8 +37,9 @@ func CloneRepository(session *Session, url string, ref string, dir string) (*git
 		Depth:             1,
 		RecurseSubmodules: git.NoRecurseSubmodules,
 		URL:               url,
-		SingleBranch:      true,
+		SingleBranch:      false,
 		Tags:              git.NoTags,
+		Auth:              &http.BasicAuth{Username: "git", Password: session.Config.GitLabApiToken},
 	}
 
 	// if ref != "" {
