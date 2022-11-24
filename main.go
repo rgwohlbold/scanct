@@ -130,8 +130,21 @@ func checkSignatures(dir string, url string, stars int, source core.GitResourceT
 		log.Error().Err(err).Msg("failed to create detector")
 		return
 	}
+	secrets := make([]string, 0)
 	for _, finding := range findings {
-		printFinding(url, finding)
+		found := false
+		for _, secret := range secrets {
+			if secret == finding.Secret {
+				found = true
+				break
+			}
+		}
+		if !found {
+			secrets = append(secrets, finding.Secret)
+			printFinding(url, finding)
+		} else {
+			log.Debug().Str("repository", url).Msg("duplicate secret found")
+		}
 	}
 
 	return len(findings) != 0
