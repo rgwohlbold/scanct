@@ -15,6 +15,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fatih/color"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
 	"gitlab.hpi.de/lukas.radermacher/shhgit-for-gitlab/core"
@@ -203,6 +205,7 @@ func publish(event *MatchEvent) {
 }
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	session.Log.Info(color.HiBlueString(core.Banner))
 	session.Log.Info("\t%s\n", color.HiCyanString(core.Author))
 	session.Log.Info("[*] Loaded %s signatures. Using %s worker threads. Temp work dir: %s\n", color.BlueString("%d", len(session.Signatures)), color.BlueString("%d", *session.Options.Threads), color.BlueString(*session.Options.TempDirectory))
