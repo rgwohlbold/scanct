@@ -89,10 +89,6 @@ func ProcessComments() {
 }
 
 func processRepositoryOrGist(url string, ref string, stars int, source core.GitResourceType) {
-	var (
-		matchedAny bool = false
-	)
-
 	dir := core.GetTempDir(core.GetHash(url))
 	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
 	_, err := core.CloneRepository(session, url, ref, dir)
@@ -103,10 +99,8 @@ func processRepositoryOrGist(url string, ref string, stars int, source core.GitR
 		return
 	}
 
-	matchedAny = checkSignatures(dir, url, stars, source)
-	if !matchedAny {
-		os.RemoveAll(dir)
-	}
+	checkSignatures(dir, url, stars, source)
+	os.RemoveAll(dir)
 }
 
 func printFinding(url string, f report.Finding) {
