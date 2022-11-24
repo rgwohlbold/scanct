@@ -1,4 +1,4 @@
-module gitlab.hpi.de/lukas.radermacher/shhgit-for-gitlab
+module gitlab.platypwnies.de/cybersecurity-klub-hpi/shhgit
 
 go 1.14
 

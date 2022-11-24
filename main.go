@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
-	"gitlab.hpi.de/lukas.radermacher/shhgit-for-gitlab/core"
+	"gitlab.platypwnies.de/cybersecurity-klub-hpi/shhgit/core"
 )
 
 type MatchEvent struct {
