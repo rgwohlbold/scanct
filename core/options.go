@@ -8,7 +8,6 @@ import (
 
 type Options struct {
 	Threads                *int
-	Silent                 *bool
 	Debug                  *bool
 	MaximumRepositorySize  *uint
 	MaximumFileSize        *uint
@@ -28,7 +27,6 @@ type Options struct {
 func ParseOptions() (*Options, error) {
 	options := &Options{
 		Threads:                flag.Int("threads", 0, "Number of concurrent threads (default number of logical CPUs)"),
-		Silent:                 flag.Bool("silent", false, "Suppress all output except for errors"),
 		Debug:                  flag.Bool("debug", false, "Print debugging information"),
 		MaximumRepositorySize:  flag.Uint("maximum-repository-size", 5120, "Maximum repository size to process in KB"),
 		MaximumFileSize:        flag.Uint("maximum-file-size", 256, "Maximum file size to process in KB"),

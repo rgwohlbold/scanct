@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/xanzy/go-gitlab"
 )
 
@@ -35,12 +36,12 @@ func GetRepositories(session *Session, wg *sync.WaitGroup) {
 		var projects, res, listError = client.Projects.ListProjects(o, nil)
 
 		if listError != nil {
-			session.Log.Fatal("Error: %v", listError)
+			log.Fatal().Err(listError).Msg("failed to list")
 			return
 		}
 
 		for _, p := range projects {
-			session.Log.Debug("New Repo found >> %v\n", p.Name)
+			log.Debug().Str("repository", p.HTTPURLToRepo).Msg("new repository")
 			session.Repositories <- p
 		}
 

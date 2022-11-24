@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4"
@@ -32,7 +31,6 @@ func CloneRepository(session *Session, url string, ref string, dir string) (*git
 	localCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session.Log.Debug("[%s] Cloning %s in to %s", url, ref, strings.Replace(dir, *session.Options.TempDirectory, "", -1))
 	opts := &git.CloneOptions{
 		Depth:             1,
 		RecurseSubmodules: git.NoRecurseSubmodules,
@@ -42,14 +40,9 @@ func CloneRepository(session *Session, url string, ref string, dir string) (*git
 		Auth:              &http.BasicAuth{Username: "git", Password: session.Config.GitLabApiToken},
 	}
 
-	// if ref != "" {
-	// 	opts.ReferenceName = plumbing.ReferenceName(ref)
-	// }
-
 	repository, err := git.PlainCloneContext(localCtx, dir, false, opts)
 
 	if err != nil {
-		session.Log.Debug("[%s] Cloning failed: %s", url, err.Error())
 		return nil, err
 	}
 

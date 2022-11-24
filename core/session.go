@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/xanzy/go-gitlab"
 )
 
@@ -17,10 +19,8 @@ type Session struct {
 	sync.Mutex
 
 	Version          string
-	Log              *Logger
 	Options          *Options
 	Config           *Config
-	Signatures       []Signature
 	Repositories     chan *gitlab.Project
 	Gists            chan string
 	Comments         chan string
@@ -41,19 +41,16 @@ func (s *Session) Start() {
 
 	s.InitLogger()
 	s.InitThreads()
-	s.InitSignatures()
 	s.InitGitLabClients()
 	s.InitCsvWriter()
 }
 
 func (s *Session) InitLogger() {
-	s.Log = &Logger{}
-	s.Log.SetDebug(*s.Options.Debug)
-	s.Log.SetSilent(*s.Options.Silent)
-}
-
-func (s *Session) InitSignatures() {
-	s.Signatures = GetSignatures(s)
+	if *s.Options.Debug {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	}
 }
 
 func (s *Session) InitGitLabClients() {
@@ -62,7 +59,7 @@ func (s *Session) InitGitLabClients() {
 	client, err := gitlab.NewClient(s.Config.GitLabApiToken, gitlab.WithBaseURL(s.Config.GitLabApiEndpoint))
 
 	if err != nil {
-		s.Log.Fatal("Could not create GitLab client.")
+		log.Fatal().Err(err).Msg("could not create GitLab client")
 	}
 
 	s.Clients <- &GitLabClientWrapper{client, s.Config.GitLabApiToken, time.Now().Add(-1 * time.Second)}
@@ -73,19 +70,18 @@ func (s *Session) GetClient() *GitLabClientWrapper {
 		select {
 
 		case client := <-s.Clients:
-			s.Log.Debug("Using client with token: %s", client.Token)
+			//s.Log.Debug("Using client with token: %s", client.Token)
 			return client
 
 		case client := <-s.ExhaustedClients:
 			sleepTime := time.Until(client.RateLimitedUntil)
-			s.Log.Warn("All GitHub tokens exhausted/rate limited. Sleeping for %s", sleepTime.String())
+			log.Warn().Dur("sleepTime", sleepTime).Msg("rate limited, sleeping")
 			time.Sleep(sleepTime)
-			s.Log.Debug("Returning client %s to pool", client.Token)
+			log.Debug().Msg("returning client to pool")
 			s.FreeClient(client)
 
 		default:
-			s.Log.Debug("Available Clients: %d", len(s.Clients))
-			s.Log.Debug("Exhausted Clients: %d", len(s.ExhaustedClients))
+			log.Debug().Int("available_clients", len(s.Clients)).Int("exhaustedClients", len(s.ExhaustedClients)).Msg("no clients available, sleeping")
 			time.Sleep(time.Millisecond * 1000)
 		}
 	}
@@ -121,7 +117,9 @@ func (s *Session) InitCsvWriter() {
 	}
 
 	file, err := os.OpenFile(*s.Options.CsvPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	LogIfError("Could not create/open CSV file", err)
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not open csv file")
+	}
 
 	s.CsvWriter = csv.NewWriter(file)
 

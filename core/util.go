@@ -34,12 +34,6 @@ func PathExists(path string) bool {
 	return false
 }
 
-func LogIfError(text string, err error) {
-	if err != nil {
-		GetSession().Log.Error("%s (%s", text, err.Error())
-	}
-}
-
 func GetHash(s string) string {
 	h := sha1.New()
 	h.Write([]byte(s))

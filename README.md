@@ -69,8 +69,6 @@ You can also forgo the signatures and use shhgit with your own custom search que
         Watch and process Gists in real time. Set to false to disable (default true)
 --search-query
         Specify a search string to ignore signatures and filter on files containing this string (regex compatible)
---silent
-        Suppress all output except for errors
 --temp-directory
         Directory to store repositories/matches (default "%temp%\shhgit")
 --threads
