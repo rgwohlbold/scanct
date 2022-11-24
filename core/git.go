@@ -37,7 +37,9 @@ func CloneRepository(session *Session, url string, ref string, dir string) (*git
 		URL:               url,
 		SingleBranch:      false,
 		Tags:              git.NoTags,
-		Auth:              &http.BasicAuth{Username: "git", Password: session.Config.GitLabApiToken},
+	}
+	if session.Config.GitLabApiToken != "" {
+		opts.Auth = &http.BasicAuth{Username: "git", Password: session.Config.GitLabApiToken}
 	}
 
 	repository, err := git.PlainCloneContext(localCtx, dir, false, opts)
