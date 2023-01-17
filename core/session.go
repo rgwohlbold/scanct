@@ -33,7 +33,6 @@ type Session struct {
 var (
 	session     *Session
 	sessionSync sync.Once
-	err         error
 )
 
 func (s *Session) Start() {
@@ -146,6 +145,7 @@ func GetSession() *Session {
 			Comments:     make(chan string, 1000),
 		}
 
+		var err error
 		if session.Options, err = ParseOptions(); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
