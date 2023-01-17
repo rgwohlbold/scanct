@@ -114,26 +114,15 @@ func checkSignatures(dir string, url string) (matchedAny bool) {
 func main() {
 	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
 
-	if len(*session.Options.Local) > 0 {
-		log.Info().Str("directory", *session.Options.Local).Msg("scanning local directory")
-		rc := 0
-		if checkSignatures(*session.Options.Local, *session.Options.Local) {
-			rc = 1
-		} else {
-			log.Info().Str("directory", *session.Options.Local).Msg("no leaks found")
-		}
-		os.Exit(rc)
-	} else {
-		var wg sync.WaitGroup
+	var wg sync.WaitGroup
 
-		if *session.Options.SearchQuery != "" {
-			log.Warn().Str("query", *session.Options.SearchQuery).Msg("searching for repositories")
-		}
-
-		wg.Add(2)
-		go core.GetRepositories(session, &wg)
-		go ProcessRepositories(&wg)
-
-		wg.Wait()
+	if *session.Options.SearchQuery != "" {
+		log.Warn().Str("query", *session.Options.SearchQuery).Msg("searching for repositories")
 	}
+
+	wg.Add(2)
+	go core.GetRepositories(session, &wg)
+	go ProcessRepositories(&wg)
+
+	wg.Wait()
 }

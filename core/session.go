@@ -40,7 +40,6 @@ func (s *Session) Start() {
 	s.InitLogger()
 	s.InitThreads()
 	s.InitGitLabClients()
-	s.InitCsvWriter()
 }
 
 func (s *Session) InitLogger() {
@@ -102,37 +101,6 @@ func (s *Session) InitThreads() {
 	}
 
 	runtime.GOMAXPROCS(*s.Options.Threads + 1)
-}
-
-func (s *Session) InitCsvWriter() {
-	if *s.Options.CsvPath == "" {
-		return
-	}
-
-	writeHeader := false
-	if !PathExists(*s.Options.CsvPath) {
-		writeHeader = true
-	}
-
-	file, err := os.OpenFile(*s.Options.CsvPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not open csv file")
-	}
-
-	s.CsvWriter = csv.NewWriter(file)
-
-	if writeHeader {
-		s.WriteToCsv([]string{"Repository name", "Signature name", "Matching file", "Matches"})
-	}
-}
-
-func (s *Session) WriteToCsv(line []string) {
-	if *s.Options.CsvPath == "" {
-		return
-	}
-
-	s.CsvWriter.Write(line)
-	s.CsvWriter.Flush()
 }
 
 func GetSession() *Session {
