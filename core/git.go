@@ -10,15 +10,6 @@ import (
 
 type GitResourceType int
 
-const (
-	LOCAL_SOURCE GitResourceType = iota
-	GITHUB_SOURCE
-	GITHUB_COMMENT
-	GIST_SOURCE
-	BITBUCKET_SOURCE
-	GITLAB_SOURCE
-)
-
 type GitResource struct {
 	Id   int64
 	Type GitResourceType
@@ -26,7 +17,7 @@ type GitResource struct {
 	Ref  string
 }
 
-func CloneRepository(session *Session, url string, ref string, dir string) (*git.Repository, error) {
+func CloneRepository(session *Session, url string, dir string) (*git.Repository, error) {
 	timeout := time.Duration(*session.Options.CloneRepositoryTimeout) * time.Second
 	localCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

@@ -58,7 +58,7 @@ func ProcessRepositories(wg *sync.WaitGroup) {
 func processRepositoryOrGist(url string, ref string) {
 	dir := core.GetTempDir(core.GetHash(url))
 	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
-	_, err := core.CloneRepository(session, url, ref, dir)
+	_, err := core.CloneRepository(session, url, dir)
 
 	if err != nil {
 		log.Error().Str("repository", url).Err(err).Msg("failed to clone repository")
