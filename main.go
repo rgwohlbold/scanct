@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -49,7 +47,7 @@ func ProcessRepositories(wg *sync.WaitGroup) {
 				}
 
 				log.Debug().Str("repository", repository.HTTPURLToRepo).Msg("processing repository")
-				processRepositoryOrGist(repository.HTTPURLToRepo, repository.DefaultBranch, repository.StarCount, core.GITHUB_SOURCE)
+				processRepositoryOrGist(repository.HTTPURLToRepo, repository.DefaultBranch)
 			}
 		}(i)
 	}
@@ -57,38 +55,7 @@ func ProcessRepositories(wg *sync.WaitGroup) {
 	innerWg.Wait()
 }
 
-func ProcessGists() {
-	threadNum := *session.Options.Threads
-
-	for i := 0; i < threadNum; i++ {
-		go func(tid int) {
-			for {
-				gistUrl := <-session.Gists
-				processRepositoryOrGist(gistUrl, "", -1, core.GIST_SOURCE)
-			}
-		}(i)
-	}
-}
-
-func ProcessComments() {
-	threadNum := *session.Options.Threads
-
-	for i := 0; i < threadNum; i++ {
-		go func(tid int) {
-			for {
-				commentBody := <-session.Comments
-				dir := core.GetTempDir(core.GetHash(commentBody))
-				ioutil.WriteFile(filepath.Join(dir, "comment.ignore"), []byte(commentBody), 0644)
-
-				if !checkSignatures(dir, "ISSUE", 0, core.GITHUB_COMMENT) {
-					os.RemoveAll(dir)
-				}
-			}
-		}(i)
-	}
-}
-
-func processRepositoryOrGist(url string, ref string, stars int, source core.GitResourceType) {
+func processRepositoryOrGist(url string, ref string) {
 	dir := core.GetTempDir(core.GetHash(url))
 	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
 	_, err := core.CloneRepository(session, url, ref, dir)
@@ -99,7 +66,7 @@ func processRepositoryOrGist(url string, ref string, stars int, source core.GitR
 		return
 	}
 
-	checkSignatures(dir, url, stars, source)
+	checkSignatures(dir, url)
 	os.RemoveAll(dir)
 }
 
@@ -114,7 +81,7 @@ func printFinding(url string, f report.Finding) {
 	event.Str("file", f.File).Str("url", url).Str("commit", f.Commit).Int("startLine", f.StartLine).Int("endLine", f.StartLine).Str("rule", f.RuleID).Msg("potential leak")
 }
 
-func checkSignatures(dir string, url string, stars int, source core.GitResourceType) (matchedAny bool) {
+func checkSignatures(dir string, url string) (matchedAny bool) {
 	detector, err := detect.NewDetectorDefaultConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create detector")
@@ -150,7 +117,7 @@ func main() {
 	if len(*session.Options.Local) > 0 {
 		log.Info().Str("directory", *session.Options.Local).Msg("scanning local directory")
 		rc := 0
-		if checkSignatures(*session.Options.Local, *session.Options.Local, -1, core.LOCAL_SOURCE) {
+		if checkSignatures(*session.Options.Local, *session.Options.Local) {
 			rc = 1
 		} else {
 			log.Info().Str("directory", *session.Options.Local).Msg("no leaks found")

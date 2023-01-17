@@ -22,7 +22,6 @@ type Session struct {
 	Options          *Options
 	Config           *Config
 	Repositories     chan *gitlab.Project
-	Gists            chan string
 	Comments         chan string
 	Context          context.Context
 	Clients          chan *GitLabClientWrapper
@@ -141,7 +140,6 @@ func GetSession() *Session {
 		session = &Session{
 			Context:      context.Background(),
 			Repositories: make(chan *gitlab.Project, 1000),
-			Gists:        make(chan string, 100),
 			Comments:     make(chan string, 1000),
 		}
 
