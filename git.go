@@ -9,15 +9,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 )
 
-type GitResourceType int
-
-type GitResource struct {
-	Id   int64
-	Type GitResourceType
-	Url  string
-	Ref  string
-}
-
 func CloneRepository(session *Session, url string, dir string) (*git.Repository, error) {
 	timeout := time.Duration(*session.Options.CloneRepositoryTimeout) * time.Second
 	localCtx, cancel := context.WithTimeout(context.Background(), timeout)

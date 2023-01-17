@@ -44,12 +44,10 @@ func ProcessRepositoryWorker(session *Session) bool {
 	return false
 }
 
-func ProcessRepositories(session *Session, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var innerWg sync.WaitGroup
+func ProcessRepositories(session *Session) {
+	var wg sync.WaitGroup
 	threadNum := *session.Options.Threads
-	innerWg.Add(threadNum)
+	wg.Add(threadNum)
 
 	for i := 0; i < threadNum; i++ {
 		go func() {
@@ -61,7 +59,7 @@ func ProcessRepositories(session *Session, wg *sync.WaitGroup) {
 			}
 		}()
 	}
-	innerWg.Wait()
+	wg.Wait()
 }
 
 func printFinding(url string, f report.Finding) {
@@ -128,8 +126,14 @@ func main() {
 	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
 
 	wg.Add(2)
-	go GetRepositories(session, &wg)
-	go ProcessRepositories(session, &wg)
+	go func() {
+		GetRepositories(session)
+		wg.Done()
+	}()
+	go func() {
+		ProcessRepositories(session)
+		wg.Done()
+	}()
 
 	wg.Wait()
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -17,9 +16,7 @@ type GitLabClientWrapper struct {
 const maxPagesCount = -1   // -1: no limit
 const maxItemCountPP = 100 // 100 is the maximum defined by the GitLab API
 
-func GetRepositories(session *Session, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func GetRepositories(session *Session) {
 	client := session.GetClient()
 
 	for page := 1; page != 0 && (maxPagesCount == -1 || page <= maxPagesCount); {
