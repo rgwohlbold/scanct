@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"github.com/xanzy/go-gitlab"
 	"math/rand"
@@ -12,47 +11,15 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
-	"gitlab.platypwnies.de/cybersecurity-klub-hpi/shhgit/core"
 )
 
-func ProcessRepositories(session *core.Session, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var innerWg sync.WaitGroup
-	threadNum := *session.Options.Threads
-	innerWg.Add(threadNum)
-
-	for i := 0; i < threadNum; i++ {
-		go func(tid int) {
-			defer innerWg.Done()
-
-			for {
-				timeout := time.Duration(*session.Options.CloneRepositoryTimeout) * time.Second
-				_, cancel := context.WithTimeout(context.Background(), timeout)
-				defer cancel()
-
-				repository, open := <-session.Repositories
-
-				if !open {
-					break
-				}
-
-				log.Debug().Str("repository", repository.HTTPURLToRepo).Msg("processing repository")
-				err := processRepositoryOrGist(session, repository.HTTPURLToRepo)
-				if err != nil {
-					return
-				}
-			}
-		}(i)
+func ProcessRepository(session *Session, url string) error {
+	dir, err := GetTempDir(session, GetHash(url))
+	if err != nil {
+		return err
 	}
-
-	innerWg.Wait()
-}
-
-func processRepositoryOrGist(session *core.Session, url string) error {
-	dir := core.GetTempDir(session, core.GetHash(url))
 	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
-	_, err := core.CloneRepository(session, url, dir)
+	_, err = CloneRepository(session, url, dir)
 
 	if err != nil {
 		log.Error().Str("repository", url).Err(err).Msg("failed to clone repository")
@@ -62,6 +29,39 @@ func processRepositoryOrGist(session *core.Session, url string) error {
 
 	checkSignatures(dir, url)
 	return os.RemoveAll(dir)
+}
+
+func ProcessRepositoryWorker(session *Session) bool {
+	repository, ok := <-session.Repositories
+	if !ok {
+		return true
+	}
+	log.Debug().Str("repository", repository.HTTPURLToRepo).Msg("processing repository")
+	err := ProcessRepository(session, repository.HTTPURLToRepo)
+	if err != nil {
+		log.Error().Err(err).Str("repository", repository.HTTPURLToRepo).Msg("error processing repository")
+	}
+	return false
+}
+
+func ProcessRepositories(session *Session, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var innerWg sync.WaitGroup
+	threadNum := *session.Options.Threads
+	innerWg.Add(threadNum)
+
+	for i := 0; i < threadNum; i++ {
+		go func() {
+			defer wg.Done()
+			for {
+				if done := ProcessRepositoryWorker(session); done {
+					return
+				}
+			}
+		}()
+	}
+	innerWg.Wait()
 }
 
 func printFinding(url string, f report.Finding) {
@@ -108,16 +108,16 @@ func checkSignatures(dir string, url string) (matchedAny bool) {
 func main() {
 	var wg sync.WaitGroup
 
-	session := &core.Session{
+	session := &Session{
 		Repositories: make(chan *gitlab.Project, 1000),
 	}
 
 	var err error
-	if session.Options, err = core.ParseOptions(); err != nil {
+	if session.Options, err = ParseOptions(); err != nil {
 		log.Fatal().Err(err).Msg("could not parse options")
 	}
 
-	if session.Config, err = core.ParseConfig(); err != nil {
+	if session.Config, err = ParseConfig(); err != nil {
 		log.Fatal().Err(err).Msg("could not parse config")
 	}
 	rand.Seed(time.Now().Unix())
@@ -128,7 +128,7 @@ func main() {
 	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
 
 	wg.Add(2)
-	go core.GetRepositories(session, &wg)
+	go GetRepositories(session, &wg)
 	go ProcessRepositories(session, &wg)
 
 	wg.Wait()

@@ -1,7 +1,8 @@
-package core
+package main
 
 import (
 	"context"
+	"github.com/pkg/errors"
 	"time"
 
 	"gopkg.in/src-d/go-git.v4"
@@ -36,7 +37,7 @@ func CloneRepository(session *Session, url string, dir string) (*git.Repository,
 	repository, err := git.PlainCloneContext(localCtx, dir, false, opts)
 
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to clone repository")
 	}
 
 	return repository, nil

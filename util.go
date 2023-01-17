@@ -1,4 +1,4 @@
-package core
+package main
 
 import (
 	"crypto/sha1"
@@ -7,16 +7,15 @@ import (
 	"path/filepath"
 )
 
-func GetTempDir(session *Session, suffix string) string {
+func GetTempDir(session *Session, suffix string) (string, error) {
 	dir := filepath.Join(*session.Options.TempDirectory, suffix)
 
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		os.MkdirAll(dir, os.ModePerm)
-	} else {
+	_, err := os.Stat(dir)
+	if !os.IsNotExist(err) {
 		os.RemoveAll(dir)
+		return "", err
 	}
-
-	return dir
+	return dir, nil
 }
 
 func GetHash(s string) string {
