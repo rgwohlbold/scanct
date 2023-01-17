@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/xanzy/go-gitlab"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -13,18 +15,7 @@ import (
 	"gitlab.platypwnies.de/cybersecurity-klub-hpi/shhgit/core"
 )
 
-type MatchEvent struct {
-	Url       string
-	Matches   []string
-	Signature string
-	File      string
-	Stars     int
-	Source    core.GitResourceType
-}
-
-var session = core.GetSession()
-
-func ProcessRepositories(wg *sync.WaitGroup) {
+func ProcessRepositories(session *core.Session, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var innerWg sync.WaitGroup
@@ -47,7 +38,10 @@ func ProcessRepositories(wg *sync.WaitGroup) {
 				}
 
 				log.Debug().Str("repository", repository.HTTPURLToRepo).Msg("processing repository")
-				processRepositoryOrGist(repository.HTTPURLToRepo, repository.DefaultBranch)
+				err := processRepositoryOrGist(session, repository.HTTPURLToRepo)
+				if err != nil {
+					return
+				}
 			}
 		}(i)
 	}
@@ -55,19 +49,19 @@ func ProcessRepositories(wg *sync.WaitGroup) {
 	innerWg.Wait()
 }
 
-func processRepositoryOrGist(url string, ref string) {
-	dir := core.GetTempDir(core.GetHash(url))
+func processRepositoryOrGist(session *core.Session, url string) error {
+	dir := core.GetTempDir(session, core.GetHash(url))
 	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
 	_, err := core.CloneRepository(session, url, dir)
 
 	if err != nil {
 		log.Error().Str("repository", url).Err(err).Msg("failed to clone repository")
 		os.RemoveAll(dir)
-		return
+		return err
 	}
 
 	checkSignatures(dir, url)
-	os.RemoveAll(dir)
+	return os.RemoveAll(dir)
 }
 
 func printFinding(url string, f report.Finding) {
@@ -112,17 +106,30 @@ func checkSignatures(dir string, url string) (matchedAny bool) {
 }
 
 func main() {
-	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
-
 	var wg sync.WaitGroup
 
-	if *session.Options.SearchQuery != "" {
-		log.Warn().Str("query", *session.Options.SearchQuery).Msg("searching for repositories")
+	session := &core.Session{
+		Repositories: make(chan *gitlab.Project, 1000),
 	}
+
+	var err error
+	if session.Options, err = core.ParseOptions(); err != nil {
+		log.Fatal().Err(err).Msg("could not parse options")
+	}
+
+	if session.Config, err = core.ParseConfig(); err != nil {
+		log.Fatal().Err(err).Msg("could not parse config")
+	}
+	rand.Seed(time.Now().Unix())
+
+	session.InitLogger()
+	session.InitThreads()
+	session.InitGitLabClients()
+	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
 
 	wg.Add(2)
 	go core.GetRepositories(session, &wg)
-	go ProcessRepositories(&wg)
+	go ProcessRepositories(session, &wg)
 
 	wg.Wait()
 }

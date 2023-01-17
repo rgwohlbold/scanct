@@ -6,13 +6,8 @@ import (
 )
 
 type Config struct {
-	GitLabApiEndpoint            string            `yaml:"gitlab_api_endpoint"`
-	GitLabApiToken               string            `yaml:"gitlab_api_token"`
-	BlacklistedStrings           []string          `yaml:"blacklisted_strings"`
-	BlacklistedExtensions        []string          `yaml:"blacklisted_extensions"`
-	BlacklistedPaths             []string          `yaml:"blacklisted_paths"`
-	BlacklistedEntropyExtensions []string          `yaml:"blacklisted_entropy_extensions"`
-	Signatures                   []ConfigSignature `yaml:"signatures"`
+	GitLabApiEndpoint string `yaml:"gitlab_api_endpoint"`
+	GitLabApiToken    string `yaml:"gitlab_api_token"`
 }
 
 type ConfigSignature struct {
@@ -23,7 +18,7 @@ type ConfigSignature struct {
 	Verifier string `yaml:"verifier,omitempty"`
 }
 
-func ParseConfig(options *Options) (*Config, error) {
+func ParseConfig() (*Config, error) {
 	config := &Config{}
 	var (
 		data []byte

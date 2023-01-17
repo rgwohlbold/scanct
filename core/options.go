@@ -15,7 +15,6 @@ type Options struct {
 	EntropyThreshold       *float64
 	PathChecks             *bool
 	TempDirectory          *string
-	SearchQuery            *string
 }
 
 func ParseOptions() (*Options, error) {
@@ -28,7 +27,6 @@ func ParseOptions() (*Options, error) {
 		EntropyThreshold:       flag.Float64("entropy-threshold", 5.0, "Set to 0 to disable entropy checks"),
 		PathChecks:             flag.Bool("path-checks", true, "Set to false to disable checking of filepaths, i.e. just match regex patterns of file contents"),
 		TempDirectory:          flag.String("temp-directory", filepath.Join(os.TempDir(), "shhgit"), "Directory to process and store repositories/matches"),
-		SearchQuery:            flag.String("search-query", "", "Specify a search string to ignore signatures and filter on files containing this string (regex compatible)"),
 	}
 
 	flag.Parse()

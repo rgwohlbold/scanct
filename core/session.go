@@ -1,13 +1,7 @@
 package core
 
 import (
-	"context"
-	"encoding/csv"
-	"fmt"
-	"math/rand"
-	"os"
 	"runtime"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -16,30 +10,11 @@ import (
 )
 
 type Session struct {
-	sync.Mutex
-
-	Version          string
 	Options          *Options
 	Config           *Config
 	Repositories     chan *gitlab.Project
-	Comments         chan string
-	Context          context.Context
 	Clients          chan *GitLabClientWrapper
 	ExhaustedClients chan *GitLabClientWrapper
-	CsvWriter        *csv.Writer
-}
-
-var (
-	session     *Session
-	sessionSync sync.Once
-)
-
-func (s *Session) Start() {
-	rand.Seed(time.Now().Unix())
-
-	s.InitLogger()
-	s.InitThreads()
-	s.InitGitLabClients()
 }
 
 func (s *Session) InitLogger() {
@@ -101,29 +76,4 @@ func (s *Session) InitThreads() {
 	}
 
 	runtime.GOMAXPROCS(*s.Options.Threads + 1)
-}
-
-func GetSession() *Session {
-	sessionSync.Do(func() {
-		session = &Session{
-			Context:      context.Background(),
-			Repositories: make(chan *gitlab.Project, 1000),
-			Comments:     make(chan string, 1000),
-		}
-
-		var err error
-		if session.Options, err = ParseOptions(); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		if session.Config, err = ParseConfig(session.Options); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		session.Start()
-	})
-
-	return session
 }
