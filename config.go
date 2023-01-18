@@ -8,6 +8,7 @@ import (
 type Config struct {
 	GitLabApiEndpoint string `yaml:"gitlab_api_endpoint"`
 	GitLabApiToken    string `yaml:"gitlab_api_token"`
+	CertificateLogURI string `yaml:"certificate_log_uri"`
 }
 
 func ParseConfig() (*Config, error) {

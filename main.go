@@ -2,15 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/xanzy/go-gitlab"
-	"math/rand"
-	"os"
-	"sync"
-	"time"
-
 	"github.com/rs/zerolog/log"
+	"github.com/xanzy/go-gitlab"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
+	"os"
+	"sync"
 )
 
 func ProcessRepository(session *Session, url string) error {
@@ -118,7 +115,8 @@ func main() {
 	if session.Config, err = ParseConfig(); err != nil {
 		log.Fatal().Err(err).Msg("could not parse config")
 	}
-	rand.Seed(time.Now().Unix())
+	StartInstanceWorkers(session)
+	os.Exit(1)
 
 	session.InitLogger()
 	session.InitThreads()
