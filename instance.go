@@ -49,7 +49,7 @@ func CTProcessWorker(config *CTConfig, startChan <-chan int64, certChan chan<- [
 		if !ok {
 			return
 		}
-		end := start + int64(config.GetEntriesBatchSize)
+		end := start + int64(config.GetEntriesBatchSize) + 1
 		var entries []ct.LogEntry
 
 		for i := 0; i < config.GetEntriesRetries; i++ {
@@ -63,7 +63,7 @@ func CTProcessWorker(config *CTConfig, startChan <-chan int64, certChan chan<- [
 		if err != nil {
 			log.Error().Err(err).Msg("error in get-entries")
 		}
-		certs := make([]Certificate, config.GetEntriesBatchSize)
+		certs := make([]Certificate, len(entries))
 		for i, entry := range entries {
 			certs[i] = Certificate{Index: entry.Index, Subjects: make([]string, 0)}
 			cert, err := entry.Leaf.X509Certificate()
@@ -98,11 +98,15 @@ func CTOutputWorker(config *CTConfig, certChan <-chan []Certificate) {
 			return
 		}
 		if len(certs) != config.GetEntriesBatchSize {
-			log.Fatal().Msg("not exactly GetEntriesBatchSize certificates arrived")
+			log.Warn().Int("expected", config.GetEntriesBatchSize).Int("received", len(certs)).Msg("not exactly GetEntriesBatchSize certificates arrived")
 		}
 		k += len(certs)
-		db.StoreCertificates(certs)
-		log.Info().Int("certs", k).Msg("processed certs")
+		err = db.StoreCertificates(certs)
+		if err != nil {
+			log.Fatal().Err(err).Msg("could not store certificates")
+
+		}
+		log.Debug().Int("certs", k).Msg("processed certs")
 	}
 }
 
@@ -130,19 +134,19 @@ func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 	// catch up
 	index := maxIndex + 1
 	log.Info().Int64("certs", maxLogIndex-index+1).Msg("catching up to sth")
-	for index <= maxLogIndex {
+	for index <= maxLogIndex-int64(config.GetEntriesBatchSize) {
 		startChan <- index
-		index += 256
+		index += int64(config.GetEntriesBatchSize)
 	}
 	log.Info().Msg("done catching up")
 	// go back
-	index = maxLogIndex
+	index = maxLogIndex - (maxLogIndex % int64(config.GetEntriesBatchSize)) - int64(config.GetEntriesBatchSize)
 	if minIndex < maxLogIndex {
-		index = minIndex
+		index = minIndex - 256
 	}
 	for {
 		startChan <- index
-		index -= 256
+		index -= int64(config.GetEntriesBatchSize)
 	}
 }
 

@@ -14,14 +14,14 @@ const GitlabMagicString = "<meta content=\"GitLab\" property=\"og:site_name\">"
 const GitlabRegisterMagicString = "<a data-qa-selector=\"register_link\" href=\"/users/sign_up\">Register now</a>"
 
 type FilterResult struct {
-	InstanceID  int
+	Instance    *Instance
 	GitlabFound bool
 	AllowSignup bool
 	Email       string
 	Password    string
 }
 
-func FilterInputWorker(instanceChan chan<- UnprocessedInstance) {
+func FilterInputWorker(instanceChan chan<- Instance) {
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
@@ -38,7 +38,7 @@ func FilterInputWorker(instanceChan chan<- UnprocessedInstance) {
 	close(instanceChan)
 }
 
-func FilterProcessWorker(instanceChan <-chan UnprocessedInstance, resultChan chan<- FilterResult) {
+func FilterProcessWorker(instanceChan <-chan Instance, resultChan chan<- FilterResult) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -49,27 +49,27 @@ func FilterProcessWorker(instanceChan <-chan UnprocessedInstance, resultChan cha
 		}
 
 		found := false
-		resp, err := client.Get(fmt.Sprintf("https://%s%s", instance.name, GitlabMagicURL))
+		resp, err := client.Get(fmt.Sprintf("https://%s%s", instance.Name, GitlabMagicURL))
 		if err != nil {
-			log.Info().Str("instance", instance.name).Err(err).Msg("error requesting instance")
+			log.Info().Str("instance", instance.Name).Err(err).Msg("error requesting instance")
 		} else if resp.StatusCode != 200 {
-			log.Info().Str("instance", instance.name).Int("status", resp.StatusCode).Msg("no instance found")
+			log.Info().Str("instance", instance.Name).Int("status", resp.StatusCode).Msg("no instance found")
 		} else {
 			var body []byte
 			body, err = io.ReadAll(resp.Body)
 			if err != nil {
-				log.Info().Str("instance", instance.name).Err(err).Msg("error while reading body")
+				log.Info().Str("instance", instance.Name).Err(err).Msg("error while reading body")
 			}
 			bodyStr := string(body)
 			if strings.Contains(bodyStr, GitlabMagicString) {
-				log.Info().Str("instance", instance.name).Msg("gitlab instance found")
+				log.Info().Str("instance", instance.Name).Msg("gitlab instance found")
 				found = true
-				resultChan <- FilterResult{InstanceID: instance.id, GitlabFound: true, AllowSignup: strings.Contains(bodyStr, GitlabRegisterMagicString)}
+				resultChan <- FilterResult{Instance: &instance, GitlabFound: true, AllowSignup: strings.Contains(bodyStr, GitlabRegisterMagicString)}
 			}
 		}
 
 		if !found {
-			resultChan <- FilterResult{InstanceID: instance.id, GitlabFound: false}
+			resultChan <- FilterResult{Instance: &instance, GitlabFound: false}
 		}
 	}
 }
@@ -81,19 +81,25 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 	}
 	defer db.Close()
 	for {
-		instance, ok := <-resultsChan
+		result, ok := <-resultsChan
 		if !ok {
 			return
 		}
-		if instance.GitlabFound {
-			err = db.AddGitLab(instance.InstanceID, instance.AllowSignup, "", "")
+		if result.GitlabFound {
+			err = db.AddGitLab(GitLab{
+				InstanceID:  result.Instance.ID,
+				AllowSignup: result.AllowSignup,
+				Email:       "",
+				Password:    "",
+				Processed:   false,
+			})
 			if err != nil {
-				log.Fatal().Int("instance", instance.InstanceID).Err(err).Msg("could not insert gitlab into db")
+				log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not insert gitlab into db")
 			}
 		} else {
-			err = db.SetProcessed(instance.InstanceID)
+			err = db.SetProcessed(result.Instance.ID)
 			if err != nil {
-				log.Fatal().Int("instance", instance.InstanceID).Err(err).Msg("could not set to processed")
+				log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not set to processed")
 			}
 		}
 	}
@@ -103,7 +109,7 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 const FilterWorkers = 20
 
 func FilterForGitLab() {
-	Fan[UnprocessedInstance, FilterResult]{
+	Fan[Instance, FilterResult]{
 		InputWorker:   FilterInputWorker,
 		ProcessWorker: FilterProcessWorker,
 		OutputWorker:  FilterOutputWorker,

@@ -1,30 +1,86 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/zricethezav/gitleaks/v8/detect"
-	"github.com/zricethezav/gitleaks/v8/report"
-	"os"
-	"sync"
-	"time"
-
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/xanzy/go-gitlab"
+	"github.com/zricethezav/gitleaks/v8/detect"
+	"github.com/zricethezav/gitleaks/v8/report"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"os"
+	"time"
 )
 
-type GitLabClientWrapper struct {
-	*gitlab.Client
-	Token            string
-	RateLimitedUntil time.Time
-}
-
-const maxPagesCount = -1   // -1: no limit
 const maxItemCountPP = 100 // 100 is the maximum defined by the GitLab API
 
-func GetRepositories(session *Session) {
-	client := session.GetClient()
+type GitlabInstance struct {
+	GitlabID int
+	Domain   string
+}
 
-	for page := 1; page != 0 && (maxPagesCount == -1 || page <= maxPagesCount); {
+func (g *GitlabInstance) URL() string {
+	return fmt.Sprintf("https://%s/api/v4", g.Domain)
+}
+
+//func (g *GitlabInstance) AddToDBIfNotExists() error {
+//	db, err := NewDatabase()
+//	defer db.Close()
+//	if err != nil {
+//		return errors.Wrap(err, "could not open database")
+//	}
+//	err = db.AddGitlabIfNotExists(g)
+//	if err != nil {
+//		return errors.Wrap(err, "could not add gitlab to database")
+//	}
+//	return nil
+//}
+
+type GitFinding struct {
+	report.Finding
+	Instance   *GitlabInstance
+	Repository *Repository
+}
+
+type ScanRepositoriesConfig struct {
+	Instance       *GitlabInstance
+	TempDirectory  string
+	GitLabApiToken string
+}
+
+func CloneRepository(config *ScanRepositoriesConfig, url string, dir string) (*git.Repository, error) {
+	localCtx, cancel := context.WithTimeout(context.Background(), CloneRepositoryTimeout)
+	defer cancel()
+
+	opts := &git.CloneOptions{
+		Depth:             1,
+		RecurseSubmodules: git.NoRecurseSubmodules,
+		URL:               url,
+		SingleBranch:      false,
+		Tags:              git.NoTags,
+	}
+	if config.GitLabApiToken != "" {
+		opts.Auth = &http.BasicAuth{Username: "git", Password: config.GitLabApiToken}
+	}
+
+	repository, err := git.PlainCloneContext(localCtx, dir, false, opts)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to clone repository")
+	}
+
+	return repository, nil
+}
+
+func RepositoryInputWorker(config *ScanRepositoriesConfig, inputChan chan<- *gitlab.Project) {
+	client, err := gitlab.NewClient(config.GitLabApiToken, gitlab.WithBaseURL(config.Instance.URL()))
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not create gitlab client")
+	}
+
+	for page := 1; page != 0; {
 		var lo = &gitlab.ListOptions{
 			Page:    page,
 			PerPage: maxItemCountPP,
@@ -43,135 +99,117 @@ func GetRepositories(session *Session) {
 		}
 
 		for _, p := range projects {
-			log.Debug().Str("repository", p.HTTPURLToRepo).Msg("new repository")
-			session.Repositories <- p
+			inputChan <- p
 		}
-
 		page = res.NextPage
 	}
-
-	close(session.Repositories)
+	close(inputChan)
 }
 
-func ProcessRepository(session *Session, url string) error {
-	dir, err := GetTempDir(session, GetHash(url))
-	if err != nil {
-		return err
-	}
-	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
-	_, err = CloneRepository(session, url, dir)
-
-	if err != nil {
-		log.Error().Str("repository", url).Err(err).Msg("failed to clone repository")
-		os.RemoveAll(dir)
-		return err
-	}
-
-	checkSignatures(dir, url)
-	return os.RemoveAll(dir)
-}
-
-func ProcessRepositoryWorker(session *Session) bool {
-	repository, ok := <-session.Repositories
-	if !ok {
-		return true
-	}
-	log.Debug().Str("repository", repository.HTTPURLToRepo).Msg("processing repository")
-	err := ProcessRepository(session, repository.HTTPURLToRepo)
-	if err != nil {
-		log.Error().Err(err).Str("repository", repository.HTTPURLToRepo).Msg("error processing repository")
-	}
-	return false
-}
-
-func ProcessRepositories(session *Session) {
-	var wg sync.WaitGroup
-	threadNum := *session.Options.Threads
-	wg.Add(threadNum)
-
-	for i := 0; i < threadNum; i++ {
-		go func() {
-			defer wg.Done()
-			for {
-				if done := ProcessRepositoryWorker(session); done {
-					return
-				}
-			}
-		}()
-	}
-	wg.Wait()
-}
-
-func printFinding(url string, f report.Finding) {
-	const maxLength = 50
-	event := log.Warn()
-	if len(f.Secret) > 50 {
-		event.Str("secret", fmt.Sprintf("%s...", f.Secret[:maxLength]))
-	} else {
-		event.Str("secret", f.Secret)
-	}
-	event.Str("file", f.File).Str("url", url).Str("commit", f.Commit).Int("startLine", f.StartLine).Int("endLine", f.StartLine).Str("rule", f.RuleID).Msg("potential leak")
-}
-
-func checkSignatures(dir string, url string) (matchedAny bool) {
+func FindingsForRepository(dir string) ([]report.Finding, error) {
 	detector, err := detect.NewDetectorDefaultConfig()
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to create detector")
+		return nil, errors.Wrap(err, "failed to create detector")
 	}
 	findings, err := detector.DetectGit(dir, "", detect.DetectType)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to create detector")
-		return
+		return nil, errors.Wrap(err, "failed to detect findings")
 	}
-	secrets := make([]string, 0)
+	_findings := make([]report.Finding, len(findings))
 	for _, finding := range findings {
 		found := false
-		for _, secret := range secrets {
-			if secret == finding.Secret {
+		for _, f := range _findings {
+			if f.Secret == finding.Secret {
 				found = true
 				break
 			}
 		}
 		if !found {
-			secrets = append(secrets, finding.Secret)
-			printFinding(url, finding)
-		} else {
-			log.Debug().Str("repository", url).Msg("duplicate secret found")
+			_findings = append(_findings, finding)
 		}
 	}
-
-	return len(findings) != 0
+	return _findings, nil
 }
 
-func ScanSecrets(options *SecretsConfig) {
+func RepositoryProcessWorker(config *ScanRepositoriesConfig, inputChan <-chan *gitlab.Project, outputChan chan<- GitFinding) {
+	for {
+		repository, ok := <-inputChan
+		if !ok {
+			return
+		}
+		url := repository.HTTPURLToRepo
+		log.Debug().Str("repository", url).Msg("processing repository")
 
-	session := &Session{
-		Repositories: make(chan *gitlab.Project, 1000),
+		dir, err := GetTempDir(GetHash(url))
+		if err != nil {
+			log.Fatal().Err(err).Msg("could not get temp dir")
+		}
+		log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
+		_, err = CloneRepository(config, url, dir)
+
+		if err != nil {
+			log.Warn().Str("repository", url).Err(err).Msg("failed to clone repository")
+			_ = os.RemoveAll(dir)
+			return
+		}
+
+		findings, err := FindingsForRepository(dir)
+		if err != nil {
+			log.Fatal().Err(err).Str("repository", url).Msg("could not get findings")
+		}
+		for _, f := range findings {
+			outputChan <- GitFinding{
+				Instance: config.Instance,
+				Finding:  f,
+			}
+			_ = os.RemoveAll(dir)
+		}
 	}
+}
 
-	session.Options = options
-
-	var err error
-	session.Config, err = ParseConfig()
+func RepositoryOutputWorker(config *ScanRepositoriesConfig, outputChan <-chan GitFinding) {
+	db, err := NewDatabase()
 	if err != nil {
-		log.Fatal().Err(err).Msg("could not parse config")
+		log.Fatal().Err(err).Msg("could not create database")
 	}
-	session.InitLogger()
-	session.InitThreads()
-	session.InitGitLabClients()
-	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
+	defer db.Close()
+	for {
+		finding, ok := <-outputChan
+		if !ok {
+			return
+		}
+		err = db.LogFinding(&finding)
+		if err != nil {
+			log.Fatal().Err(err).Msg("could not insert finding into database")
+		}
+	}
+}
 
-	var wg sync.WaitGroup
+//func printFinding(url string, f report.GitFinding) {
+//	const maxLength = 50
+//	event := log.Warn()
+//	if len(f.Secret) > 50 {
+//		event.Str("secret", fmt.Sprintf("%s...", f.Secret[:maxLength]))
+//	} else {
+//		event.Str("secret", f.Secret)
+//	}
+//	event.Str("file", f.File).Str("url", url).Str("commit", f.Commit).Int("startLine", f.StartLine).Int("endLine", f.StartLine).Str("rule", f.RuleID).Msg("potential leak")
+//}
 
-	wg.Add(2)
-	go func() {
-		GetRepositories(session)
-		wg.Done()
-	}()
-	go func() {
-		ProcessRepositories(session)
-		wg.Done()
-	}()
+const RepositoryProcessWorkers = 5
+const CloneRepositoryTimeout = 60 * time.Second
 
-	wg.Wait()
+func ScanRepositories(config *ScanRepositoriesConfig) {
+	Fan[*gitlab.Project, GitFinding]{
+		InputWorker: func(inputChan chan<- *gitlab.Project) { RepositoryInputWorker(config, inputChan) },
+		ProcessWorker: func(inputChan <-chan *gitlab.Project, outputChan chan<- GitFinding) {
+			RepositoryProcessWorker(config, inputChan, outputChan)
+		},
+		OutputWorker: func(outputChan <-chan GitFinding) {
+			RepositoryOutputWorker(config, outputChan)
+		},
+		Workers:      RepositoryProcessWorkers,
+		InputBuffer:  100,
+		OutputBuffer: 100,
+	}.Run()
 }

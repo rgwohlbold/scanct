@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 )
 
-func GetTempDir(session *Session, suffix string) (string, error) {
-	dir := filepath.Join(*session.Options.TempDirectory, suffix)
+func GetTempDir(suffix string) (string, error) {
+	dir := filepath.Join("/tmp", suffix)
 
 	_, err := os.Stat(dir)
 	if !os.IsNotExist(err) {
