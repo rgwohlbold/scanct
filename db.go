@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"math"
 	"os"
 )
@@ -129,7 +130,7 @@ func (d *Database) AddGitLab(g GitLab) error {
 }
 
 func (d *Database) SetProcessed(instanceID int) error {
-	return d.db.Where("id = ?", instanceID).Set("processed", true).Error
+	return d.db.Table("instances").Where("id = ?", instanceID).Update("processed", true).Error
 }
 
 func (d *Database) StoreCertificates(certs []Certificate) error {
@@ -166,6 +167,19 @@ func (d *Database) LogFinding(f *GitFinding) error {
 		return errors.Wrap(err, "could not insert finding")
 	}
 	return nil
+}
+
+func (d *Database) GetUnprocessedGitLabs() ([]GitLab, error) {
+	var gl []GitLab
+	err := d.db.Where("processed = false").Preload(clause.Associations).Find(&gl).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get unprocessed repositories")
+	}
+	return gl, nil
+}
+
+func (g *GitLab) URL() string {
+	return fmt.Sprintf("https://%s/api/v4", g.Instance.Name)
 }
 
 //func (d *Database) AddGitlabIfNotExists(g *GitlabInstance) error {

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"flag"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/xanzy/go-gitlab"
@@ -15,15 +15,6 @@ import (
 )
 
 const maxItemCountPP = 100 // 100 is the maximum defined by the GitLab API
-
-type GitlabInstance struct {
-	GitlabID int
-	Domain   string
-}
-
-func (g *GitlabInstance) URL() string {
-	return fmt.Sprintf("https://%s/api/v4", g.Domain)
-}
 
 //func (g *GitlabInstance) AddToDBIfNotExists() error {
 //	db, err := NewDatabase()
@@ -40,12 +31,12 @@ func (g *GitlabInstance) URL() string {
 
 type GitFinding struct {
 	report.Finding
-	Instance   *GitlabInstance
+	GitLab     *GitLab
 	Repository *Repository
 }
 
 type ScanRepositoriesConfig struct {
-	Instance       *GitlabInstance
+	GitLab         *GitLab
 	TempDirectory  string
 	GitLabApiToken string
 }
@@ -75,7 +66,9 @@ func CloneRepository(config *ScanRepositoriesConfig, url string, dir string) (*g
 }
 
 func RepositoryInputWorker(config *ScanRepositoriesConfig, inputChan chan<- *gitlab.Project) {
-	client, err := gitlab.NewClient(config.GitLabApiToken, gitlab.WithBaseURL(config.Instance.URL()))
+	defer close(inputChan)
+
+	client, err := gitlab.NewClient(config.GitLabApiToken, gitlab.WithBaseURL(config.GitLab.URL()))
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create gitlab client")
 	}
@@ -94,7 +87,7 @@ func RepositoryInputWorker(config *ScanRepositoriesConfig, inputChan chan<- *git
 		var projects, res, listError = client.Projects.ListProjects(o, nil)
 
 		if listError != nil {
-			log.Fatal().Err(listError).Msg("failed to list")
+			log.Error().Err(listError).Msg("failed to list")
 			return
 		}
 
@@ -103,7 +96,6 @@ func RepositoryInputWorker(config *ScanRepositoriesConfig, inputChan chan<- *git
 		}
 		page = res.NextPage
 	}
-	close(inputChan)
 }
 
 func FindingsForRepository(dir string) ([]report.Finding, error) {
@@ -159,8 +151,9 @@ func RepositoryProcessWorker(config *ScanRepositoriesConfig, inputChan <-chan *g
 		}
 		for _, f := range findings {
 			outputChan <- GitFinding{
-				Instance: config.Instance,
-				Finding:  f,
+				GitLab:     config.GitLab,
+				Finding:    f,
+				Repository: nil,
 			}
 			_ = os.RemoveAll(dir)
 		}
@@ -210,4 +203,48 @@ func ScanRepositories(config *ScanRepositoriesConfig) {
 		InputBuffer:  100,
 		OutputBuffer: 100,
 	}.Run()
+}
+
+func RunSecrets() {
+	secretsCmd := flag.NewFlagSet("secrets", flag.ExitOnError)
+
+	instanceFlag := secretsCmd.String("instance", "", "GitLab instance to scan")
+	//tokenFlag := secretsCmd.String("token", "", "API token")
+	err := secretsCmd.Parse(os.Args[2:])
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not parse secrets command")
+	}
+	if *instanceFlag == "" {
+		var db Database
+		db, err = NewDatabase()
+		defer db.Close()
+		if err != nil {
+			log.Fatal().Err(err).Msg("could not create database")
+		}
+		var gitlabs []GitLab
+		gitlabs, err = db.GetUnprocessedGitLabs()
+		if err != nil {
+			log.Fatal().Err(err).Msg("could not get unprocessed gitlabs")
+		}
+		for i := range gitlabs {
+			log.Debug().Str("gitlab", gitlabs[i].Instance.Name).Msg("processing gitlab")
+			ScanRepositories(&ScanRepositoriesConfig{
+				GitLab:         &gitlabs[i],
+				TempDirectory:  "/tmp",
+				GitLabApiToken: "",
+			})
+			err = db.SetProcessed(gitlabs[i].ID)
+			if err != nil {
+				log.Error().Err(err).Msg("could not set gitlab as processed")
+			}
+		}
+	}
+	//return SecretsCommand, &ScanRepositoriesConfig{
+	//	Instance: &GitlabInstance{
+	//		GitlabID: -1,
+	//		Domain:   *instanceFlag,
+	//	},
+	//	TempDirectory:  "/tmp",
+	//	GitLabApiToken: *tokenFlag,
+	//}, err
 }

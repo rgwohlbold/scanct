@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"os"
 )
 
 func main() {
@@ -14,19 +13,15 @@ func main() {
 	db.Close()
 
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	command, options, err := ParseOptions()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not parse options")
-	}
-	if command == NoCommand {
-		os.Exit(1)
-	} else if command == SecretsCommand {
-		ScanRepositories(options)
-	} else if command == CTCommand {
+	command := GetSubcommand()
+	if command == CTCommand {
 		config := CTConfig{URL: "https://oak.ct.letsencrypt.org/2023/", GetEntriesBatchSize: 256, GetEntriesRetries: 5}
 		GetCTInstances(&config)
 	} else if command == FilterInstanceCommand {
 		FilterForGitLab()
+	} else if command == SecretsCommand {
+		RunSecrets()
+	} else {
+		log.Fatal().Msg("unknown command. options are: ct, filter, secrets")
 	}
-	os.Exit(1)
 }

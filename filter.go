@@ -79,7 +79,6 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
 	}
-	defer db.Close()
 	for {
 		result, ok := <-resultsChan
 		if !ok {
@@ -95,11 +94,6 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 			})
 			if err != nil {
 				log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not insert gitlab into db")
-			}
-		} else {
-			err = db.SetProcessed(result.Instance.ID)
-			if err != nil {
-				log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not set to processed")
 			}
 		}
 	}
