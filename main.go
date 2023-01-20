@@ -107,31 +107,34 @@ func main() {
 		Repositories: make(chan *gitlab.Project, 1000),
 	}
 
-	var err error
-	if session.Options, err = ParseOptions(); err != nil {
-		log.Fatal().Err(err).Msg("could not parse options")
-	}
+	command, options, err := ParseOptions()
+	if command == NoCommand {
+		os.Exit(1)
+	} else if command == SecretsCommand {
+		session.Options = options
+		if session.Config, err = ParseConfig(); err != nil {
+			log.Fatal().Err(err).Msg("could not parse config")
+		}
+		session.InitLogger()
+		session.InitThreads()
+		session.InitGitLabClients()
+		log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
 
-	if session.Config, err = ParseConfig(); err != nil {
-		log.Fatal().Err(err).Msg("could not parse config")
+		wg.Add(2)
+		go func() {
+			GetRepositories(session)
+			wg.Done()
+		}()
+		go func() {
+			ProcessRepositories(session)
+			wg.Done()
+		}()
+
+		wg.Wait()
+	} else if command == CTCommand {
+		config := CTConfig{URL: "https://oak.ct.letsencrypt.org/2023/", GetEntriesBatchSize: 256, GetEntriesRetries: 5}
+		StartInstanceWorkers(&config)
 	}
-	StartInstanceWorkers(session)
 	os.Exit(1)
 
-	session.InitLogger()
-	session.InitThreads()
-	session.InitGitLabClients()
-	log.Debug().Int("worker_threads", *session.Options.Threads).Str("temp_directory", *session.Options.TempDirectory).Msg("starting shhgit")
-
-	wg.Add(2)
-	go func() {
-		GetRepositories(session)
-		wg.Done()
-	}()
-	go func() {
-		ProcessRepositories(session)
-		wg.Done()
-	}()
-
-	wg.Wait()
 }

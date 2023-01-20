@@ -2,26 +2,116 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
+	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/jsonclient"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"math"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
 
-type CertData struct {
-	LeafInput string `json:"leaf_input"`
-	ExtraData string `json:"extra_data"`
+type CTConfig struct {
+	URL                 string
+	GetEntriesRetries   int
+	GetEntriesBatchSize int
 }
 
-type CertLog struct {
-	Entries []CertData
+type Certificate struct {
+	Subjects []string
+	Index    int64
 }
 
-func ConnectLog(session *Session) (*client.LogClient, error) {
+type Database struct {
+	db *sql.DB
+}
+
+func NewDatabase() (Database, error) {
+	db, err := sql.Open("sqlite3", "./instances.db")
+	if err != nil {
+		return Database{}, errors.Wrap(err, "could not open database")
+	}
+	_, err = db.Exec("create table if not exists instances (id integer not null primary key, ind integer, name text);")
+	if err != nil {
+		return Database{}, errors.Wrap(err, "could not create table")
+	}
+	_, err = db.Exec("create unique index if not exists ind_idx on instances (ind);")
+	if err != nil {
+		return Database{}, errors.Wrap(err, "could not create index")
+	}
+	return Database{db}, nil
+}
+
+func (d *Database) Close() {
+	err := d.db.Close()
+	if err != nil {
+		log.Error().Err(err).Msg("error closing database")
+	}
+}
+
+func (d *Database) IndexRange() (int64, int64, error) {
+	res, err := d.db.Query("select count(*) from instances")
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not count rows")
+	}
+	res.Next()
+	var rows int64
+	err = res.Scan(&rows)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not scan row")
+	}
+	if rows == 0 {
+		return math.MaxInt64 / 2, math.MaxInt64 / 2, nil
+	}
+
+	res, err = d.db.Query("select max(ind), min(ind) from instances")
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not get index range")
+	}
+	res.Next()
+	var max, min int64
+	err = res.Scan(&max, &min)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not scan row")
+	}
+	err = res.Close()
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not close results")
+	}
+	return min, max, nil
+}
+
+func (d *Database) StoreCertificates(certs []Certificate) {
+	var tx *sql.Tx
+	tx, err := d.db.Begin()
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not begin transaction")
+	}
+	var stmt *sql.Stmt
+	stmt, err = tx.Prepare("insert into instances(ind, name) values(?, ?)")
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not prepare statement")
+	}
+	for _, cert := range certs {
+		for _, subject := range cert.Subjects {
+			_, err = stmt.Exec(cert.Index, subject)
+			if err != nil {
+				log.Fatal().Err(err).Msg("could not execute statement")
+			}
+		}
+
+	}
+	err = tx.Commit()
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not commit transaction")
+	}
+}
+
+func ConnectLog(config *CTConfig) (*client.LogClient, error) {
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -34,12 +124,12 @@ func ConnectLog(session *Session) (*client.LogClient, error) {
 			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}
-	return client.New(session.Config.CertificateLogURI, httpClient, jsonclient.Options{})
+	return client.New(config.URL, httpClient, jsonclient.Options{})
 }
 
-func GitlabInstanceWorker(session *Session, startChan <-chan int64, subjectChan chan<- []string) {
+func GitlabInstanceWorker(config *CTConfig, startChan <-chan int64, certChan chan<- []Certificate) {
 	ctx := context.Background()
-	c, err := ConnectLog(session)
+	c, err := ConnectLog(config)
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -48,56 +138,78 @@ func GitlabInstanceWorker(session *Session, startChan <-chan int64, subjectChan 
 		if !ok {
 			return
 		}
-		end := start + 256
-		entries, err := c.GetEntries(ctx, start, end)
-		if err != nil {
-			log.Fatal().Err(err)
+		end := start + int64(config.GetEntriesBatchSize)
+		var entries []ct.LogEntry
+
+		for i := 0; i < config.GetEntriesRetries; i++ {
+			entries, err = c.GetEntries(ctx, start, end)
+			if err == nil {
+				break
+			}
+			time.Sleep(1)
+
 		}
-		subjects := make([]string, 256)
+		if err != nil {
+			log.Error().Err(err).Msg("error in get-entries")
+		}
+		certs := make([]Certificate, config.GetEntriesBatchSize)
 		for i, entry := range entries {
+			certs[i] = Certificate{Index: entry.Index, Subjects: make([]string, 0)}
 			cert, err := entry.Leaf.X509Certificate()
 			if err != nil {
 				log.Fatal().Err(err)
 			}
 			if cert != nil {
-				subjects[i] = cert.Subject.CommonName
-				fmt.Println(entry.Index, "cert", cert.Subject)
+				certs[i].Subjects = append(certs[i].Subjects, cert.Subject.CommonName)
 			} else {
 				precert, err := entry.Leaf.Precertificate()
 				if err != nil {
 					log.Fatal().Err(err)
 				}
-				fmt.Println(entry.Index, "precert", precert.Subject, precert.Subject.Names)
-				subjects[i] = precert.Subject.CommonName
+				certs[i].Subjects = append(certs[i].Subjects, precert.Subject.CommonName)
 			}
 		}
-		subjectChan <- subjects
+		certChan <- certs
 	}
 }
 
-func ProcessInstancesWorker(session *Session, subjectsChan <-chan []string) {
+func DBWorker(config *CTConfig, certChan <-chan []Certificate, doneChan <-chan bool) {
+	db, err := NewDatabase()
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not create database")
+	}
+	defer db.Close()
+
 	k := 0
 	for {
-		subjects, ok := <-subjectsChan
-		if !ok {
+		select {
+		case certs, ok := <-certChan:
+			if !ok {
+				return
+			}
+			if len(certs) != config.GetEntriesBatchSize {
+				log.Fatal().Msg("not exactly GetEntriesBatchSize certificates arrived")
+			}
+			k += len(certs)
+			db.StoreCertificates(certs)
+			log.Info().Int("certs", k).Msg("processed certs")
+		case <-doneChan:
 			return
 		}
-		if len(subjects) != 256 {
-			fmt.Println("not good")
-		}
-		k += len(subjects)
-		for _, subject := range subjects {
-			if strings.Contains(subject, "git") {
-				fmt.Println(subject)
-			}
-		}
-		fmt.Println(k)
 	}
 }
 
-func StartIndexWorker(session *Session, startChan chan<- int64) {
+func StartIndexWorker(config *CTConfig, startChan chan<- int64) {
+	db, err := NewDatabase()
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not open database")
+	}
+	minIndex, maxIndex, err := db.IndexRange()
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not get index range")
+	}
 	ctx := context.Background()
-	c, err := ConnectLog(session)
+	c, err := ConnectLog(config)
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -105,31 +217,55 @@ func StartIndexWorker(session *Session, startChan chan<- int64) {
 	if err != nil {
 		log.Fatal().Err(err)
 	}
-	startIndex := int64(sth.TreeSize - 1)
-	startIndex = startIndex - startIndex%256
 
+	maxLogIndex := int64(sth.TreeSize - 1)
+
+	// catch up
+	index := maxIndex + 1
+	log.Info().Int64("certs", maxLogIndex-index+1).Msg("catching up to sth")
+	for index <= maxLogIndex {
+		startChan <- index
+		index += 256
+	}
+	log.Info().Msg("done catching up")
+	// go back
+	index = maxLogIndex
+	if minIndex < maxLogIndex {
+		index = minIndex
+	}
 	for {
-		startChan <- startIndex
-		startIndex -= 256
+		startChan <- index
+		index -= 256
 	}
 }
 
-const Workers = 50
+const Workers = 30
 
-func StartInstanceWorkers(session *Session) {
+func StartInstanceWorkers(config *CTConfig) {
 	var wg sync.WaitGroup
+	var dbWg sync.WaitGroup
 
 	wg.Add(Workers)
 
 	startChan := make(chan int64, Workers)
-	subjectsChan := make(chan []string, Workers)
-	go StartIndexWorker(session, startChan)
+	subjectsChan := make(chan []Certificate, Workers)
+	doneChan := make(chan bool)
+	go StartIndexWorker(config, startChan)
 	for i := 0; i < Workers; i++ {
 		go func() {
-			GitlabInstanceWorker(session, startChan, subjectsChan)
+			GitlabInstanceWorker(config, startChan, subjectsChan)
 		}()
 	}
-	go ProcessInstancesWorker(session, subjectsChan)
+
+	dbWg.Add(1)
+	go func() {
+		DBWorker(config, subjectsChan, doneChan)
+		dbWg.Done()
+	}()
+
 	wg.Wait()
+	doneChan <- true
+	dbWg.Done()
+
 	close(subjectsChan)
 }

@@ -10,7 +10,7 @@ import (
 )
 
 type Session struct {
-	Options          *Options
+	Options          *SecretsConfig
 	Config           *Config
 	Repositories     chan *gitlab.Project
 	Clients          chan *GitLabClientWrapper
