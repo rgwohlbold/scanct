@@ -233,7 +233,7 @@ func RunSecrets() {
 				TempDirectory:  "/tmp",
 				GitLabApiToken: "",
 			})
-			err = db.SetProcessed(gitlabs[i].ID)
+			err = db.SetGitlabProcessed(gitlabs[i].ID)
 			if err != nil {
 				log.Error().Err(err).Msg("could not set gitlab as processed")
 			}

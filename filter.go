@@ -96,6 +96,10 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 				log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not insert gitlab into db")
 			}
 		}
+		err = db.SetInstanceProcessed(result.Instance.ID)
+		if err != nil {
+			log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not set instance processed")
+		}
 	}
 
 }

@@ -129,7 +129,11 @@ func (d *Database) AddGitLab(g GitLab) error {
 	})
 }
 
-func (d *Database) SetProcessed(instanceID int) error {
+func (d *Database) SetGitlabProcessed(gitlabID int) error {
+	return d.db.Table("git_labs").Where("id = ?", gitlabID).Update("processed", true).Error
+}
+
+func (d *Database) SetInstanceProcessed(instanceID int) error {
 	return d.db.Table("instances").Where("id = ?", instanceID).Update("processed", true).Error
 }
 
