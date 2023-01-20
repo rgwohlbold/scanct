@@ -167,7 +167,7 @@ func RepositoryProcessWorker(config *ScanRepositoriesConfig, inputChan <-chan *g
 	}
 }
 
-func RepositoryOutputWorker(config *ScanRepositoriesConfig, outputChan <-chan GitFinding) {
+func RepositoryOutputWorker(outputChan <-chan GitFinding) {
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
@@ -205,9 +205,7 @@ func ScanRepositories(config *ScanRepositoriesConfig) {
 		ProcessWorker: func(inputChan <-chan *gitlab.Project, outputChan chan<- GitFinding) {
 			RepositoryProcessWorker(config, inputChan, outputChan)
 		},
-		OutputWorker: func(outputChan <-chan GitFinding) {
-			RepositoryOutputWorker(config, outputChan)
-		},
+		OutputWorker: RepositoryOutputWorker,
 		Workers:      RepositoryProcessWorkers,
 		InputBuffer:  100,
 		OutputBuffer: 100,

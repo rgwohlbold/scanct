@@ -22,7 +22,7 @@ func (f Fan[I, O]) Run() {
 		f.InputWorker(inputChan)
 		wg.Done()
 	}()
-	for i := 0; i < FilterWorkers; i++ {
+	for i := 0; i < f.Workers; i++ {
 		go func() {
 			f.ProcessWorker(inputChan, outputChan)
 			wg.Done()
@@ -36,5 +36,5 @@ func (f Fan[I, O]) Run() {
 	}()
 	wg.Wait()
 	close(outputChan)
-	dbWg.Done()
+	dbWg.Wait()
 }
