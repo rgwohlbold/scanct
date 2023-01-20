@@ -9,9 +9,10 @@ import (
 type Subcommand int
 
 const (
-	SecretsCommand Subcommand = iota
-	CTCommand                 = iota
-	NoCommand                 = iota
+	CTCommand             Subcommand = iota
+	FilterInstanceCommand            = iota
+	SecretsCommand                   = iota
+	NoCommand                        = iota
 )
 
 type SecretsConfig struct {
@@ -46,6 +47,8 @@ func ParseOptions() (Subcommand, *SecretsConfig, error) {
 		return SecretsCommand, options, err
 	} else if os.Args[1] == "ct" {
 		return CTCommand, nil, nil
+	} else if os.Args[1] == "filter" {
+		return FilterInstanceCommand, nil, nil
 	}
 	return NoCommand, nil, nil
 }

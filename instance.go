@@ -2,16 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/jsonclient"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-	"math"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -24,91 +20,6 @@ type CTConfig struct {
 type Certificate struct {
 	Subjects []string
 	Index    int64
-}
-
-type Database struct {
-	db *sql.DB
-}
-
-func NewDatabase() (Database, error) {
-	db, err := sql.Open("sqlite3", "./instances.db")
-	if err != nil {
-		return Database{}, errors.Wrap(err, "could not open database")
-	}
-	_, err = db.Exec("create table if not exists instances (id integer not null primary key, ind integer, name text);")
-	if err != nil {
-		return Database{}, errors.Wrap(err, "could not create table")
-	}
-	_, err = db.Exec("create unique index if not exists ind_idx on instances (ind);")
-	if err != nil {
-		return Database{}, errors.Wrap(err, "could not create index")
-	}
-	return Database{db}, nil
-}
-
-func (d *Database) Close() {
-	err := d.db.Close()
-	if err != nil {
-		log.Error().Err(err).Msg("error closing database")
-	}
-}
-
-func (d *Database) IndexRange() (int64, int64, error) {
-	res, err := d.db.Query("select count(*) from instances")
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "could not count rows")
-	}
-	res.Next()
-	var rows int64
-	err = res.Scan(&rows)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "could not scan row")
-	}
-	if rows == 0 {
-		return math.MaxInt64 / 2, math.MaxInt64 / 2, nil
-	}
-
-	res, err = d.db.Query("select max(ind), min(ind) from instances")
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "could not get index range")
-	}
-	res.Next()
-	var max, min int64
-	err = res.Scan(&max, &min)
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "could not scan row")
-	}
-	err = res.Close()
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "could not close results")
-	}
-	return min, max, nil
-}
-
-func (d *Database) StoreCertificates(certs []Certificate) {
-	var tx *sql.Tx
-	tx, err := d.db.Begin()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not begin transaction")
-	}
-	var stmt *sql.Stmt
-	stmt, err = tx.Prepare("insert into instances(ind, name) values(?, ?)")
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not prepare statement")
-	}
-	for _, cert := range certs {
-		for _, subject := range cert.Subjects {
-			_, err = stmt.Exec(cert.Index, subject)
-			if err != nil {
-				log.Fatal().Err(err).Msg("could not execute statement")
-			}
-		}
-
-	}
-	err = tx.Commit()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not commit transaction")
-	}
 }
 
 func ConnectLog(config *CTConfig) (*client.LogClient, error) {
@@ -127,7 +38,7 @@ func ConnectLog(config *CTConfig) (*client.LogClient, error) {
 	return client.New(config.URL, httpClient, jsonclient.Options{})
 }
 
-func GitlabInstanceWorker(config *CTConfig, startChan <-chan int64, certChan chan<- []Certificate) {
+func CTProcessWorker(config *CTConfig, startChan <-chan int64, certChan chan<- []Certificate) {
 	ctx := context.Background()
 	c, err := ConnectLog(config)
 	if err != nil {
@@ -173,7 +84,7 @@ func GitlabInstanceWorker(config *CTConfig, startChan <-chan int64, certChan cha
 	}
 }
 
-func DBWorker(config *CTConfig, certChan <-chan []Certificate, doneChan <-chan bool) {
+func CTOutputWorker(config *CTConfig, certChan <-chan []Certificate) {
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
@@ -182,24 +93,20 @@ func DBWorker(config *CTConfig, certChan <-chan []Certificate, doneChan <-chan b
 
 	k := 0
 	for {
-		select {
-		case certs, ok := <-certChan:
-			if !ok {
-				return
-			}
-			if len(certs) != config.GetEntriesBatchSize {
-				log.Fatal().Msg("not exactly GetEntriesBatchSize certificates arrived")
-			}
-			k += len(certs)
-			db.StoreCertificates(certs)
-			log.Info().Int("certs", k).Msg("processed certs")
-		case <-doneChan:
+		certs, ok := <-certChan
+		if !ok {
 			return
 		}
+		if len(certs) != config.GetEntriesBatchSize {
+			log.Fatal().Msg("not exactly GetEntriesBatchSize certificates arrived")
+		}
+		k += len(certs)
+		db.StoreCertificates(certs)
+		log.Info().Int("certs", k).Msg("processed certs")
 	}
 }
 
-func StartIndexWorker(config *CTConfig, startChan chan<- int64) {
+func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not open database")
@@ -239,33 +146,21 @@ func StartIndexWorker(config *CTConfig, startChan chan<- int64) {
 	}
 }
 
-const Workers = 30
+const CTWorkers = 30
 
-func StartInstanceWorkers(config *CTConfig) {
-	var wg sync.WaitGroup
-	var dbWg sync.WaitGroup
-
-	wg.Add(Workers)
-
-	startChan := make(chan int64, Workers)
-	subjectsChan := make(chan []Certificate, Workers)
-	doneChan := make(chan bool)
-	go StartIndexWorker(config, startChan)
-	for i := 0; i < Workers; i++ {
-		go func() {
-			GitlabInstanceWorker(config, startChan, subjectsChan)
-		}()
-	}
-
-	dbWg.Add(1)
-	go func() {
-		DBWorker(config, subjectsChan, doneChan)
-		dbWg.Done()
-	}()
-
-	wg.Wait()
-	doneChan <- true
-	dbWg.Done()
-
-	close(subjectsChan)
+func GetCTInstances(config *CTConfig) {
+	Fan[int64, []Certificate]{
+		InputWorker: func(inputChan chan<- int64) {
+			CTInputWorker(config, inputChan)
+		},
+		ProcessWorker: func(inputChan <-chan int64, outputChan chan<- []Certificate) {
+			CTProcessWorker(config, inputChan, outputChan)
+		},
+		OutputWorker: func(outputChan <-chan []Certificate) {
+			CTOutputWorker(config, outputChan)
+		},
+		Workers:      CTWorkers,
+		InputBuffer:  100,
+		OutputBuffer: 100,
+	}.Run()
 }
