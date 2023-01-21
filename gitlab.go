@@ -151,7 +151,10 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 				File:       f.File,
 				URL:        fmt.Sprintf("%s/blob/%s/%s#L%d-%d", repository.CloneURL(), f.Commit, f.File, f.StartLine, f.EndLine),
 			}
-			_ = os.RemoveAll(dir)
+		}
+		err = os.RemoveAll(dir)
+		if err != nil {
+			log.Fatal().Err(err).Msg("could not remove clone dir")
 		}
 
 		err = db.SetRepositoryProcessed(repository.ID)
