@@ -26,7 +26,7 @@ func FilterInputWorker(instanceChan chan<- Instance) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
 	}
-	potentialInstances, err := db.GetUnprocessedPotentialGitLabs()
+	potentialInstances, err := db.GetUnprocessedInstances()
 	db.Close()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not get unprocessed instances")
@@ -91,6 +91,7 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 				Email:       "",
 				Password:    "",
 				Processed:   false,
+				BaseURL:     fmt.Sprintf("https://%s", result.Instance.Name),
 			})
 			if err != nil {
 				log.Fatal().Str("instance", result.Instance.Name).Err(err).Msg("could not insert gitlab into db")
@@ -104,9 +105,9 @@ func FilterOutputWorker(resultsChan <-chan FilterResult) {
 
 }
 
-const FilterWorkers = 20
+const FilterWorkers = 5
 
-func FilterForGitLab() {
+func RunFilterCommand() {
 	Fan[Instance, FilterResult]{
 		InputWorker:   FilterInputWorker,
 		ProcessWorker: FilterProcessWorker,

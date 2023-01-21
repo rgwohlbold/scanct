@@ -14,7 +14,8 @@ import (
 type CTConfig struct {
 	URL                 string
 	GetEntriesRetries   int
-	GetEntriesBatchSize int
+	GetEntriesBatchSize int64
+	NumCerts            int64
 }
 
 type Certificate struct {
@@ -97,8 +98,8 @@ func CTOutputWorker(config *CTConfig, certChan <-chan []Certificate) {
 		if !ok {
 			return
 		}
-		if len(certs) != config.GetEntriesBatchSize {
-			log.Warn().Int("expected", config.GetEntriesBatchSize).Int("received", len(certs)).Msg("not exactly GetEntriesBatchSize certificates arrived")
+		if int64(len(certs)) != config.GetEntriesBatchSize {
+			log.Warn().Int64("expected", config.GetEntriesBatchSize).Int("received", len(certs)).Msg("not exactly GetEntriesBatchSize certificates arrived")
 		}
 		k += len(certs)
 		err = db.StoreCertificates(certs)
@@ -111,6 +112,8 @@ func CTOutputWorker(config *CTConfig, certChan <-chan []Certificate) {
 }
 
 func CTInputWorker(config *CTConfig, startChan chan<- int64) {
+	defer close(startChan)
+
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not open database")
@@ -129,6 +132,8 @@ func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 		log.Fatal().Err(err)
 	}
 
+	numCerts := int64(0)
+
 	maxLogIndex := int64(sth.TreeSize - 1)
 
 	// catch up
@@ -136,9 +141,14 @@ func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 	log.Info().Int64("certs", maxLogIndex-index+1).Msg("catching up to sth")
 	for index <= maxLogIndex-int64(config.GetEntriesBatchSize) {
 		startChan <- index
-		index += int64(config.GetEntriesBatchSize)
+		index += config.GetEntriesBatchSize
+		numCerts += config.GetEntriesBatchSize
+		if numCerts >= config.NumCerts {
+			return
+		}
 	}
 	log.Info().Msg("done catching up")
+
 	// go back
 	index = maxLogIndex - (maxLogIndex % int64(config.GetEntriesBatchSize)) - int64(config.GetEntriesBatchSize)
 	if minIndex < maxLogIndex {
@@ -146,13 +156,17 @@ func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 	}
 	for {
 		startChan <- index
-		index -= int64(config.GetEntriesBatchSize)
+		index -= config.GetEntriesBatchSize
+		numCerts += config.GetEntriesBatchSize
+		if numCerts >= config.NumCerts {
+			return
+		}
 	}
 }
 
 const CTWorkers = 30
 
-func GetCTInstances(config *CTConfig) {
+func RunCTCommand(config *CTConfig) {
 	Fan[int64, []Certificate]{
 		InputWorker: func(inputChan chan<- int64) {
 			CTInputWorker(config, inputChan)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"github.com/xanzy/go-gitlab"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,14 +30,16 @@ type GitLab struct {
 	AllowSignup bool
 	Email       string
 	Password    string
+	APIToken    string
 	Processed   bool
+	BaseURL     string `gorm:"uniqueIndex:git_labs_base_url"`
 }
 
 type Repository struct {
 	ID        int
-	GitLabID  int
+	GitLabID  int    `gorm:"uniqueIndex:repo"`
 	GitLab    GitLab `gorm:"foreignKey:GitLabID"`
-	Name      string
+	Name      string `gorm:"uniqueIndex:repo"`
 	Processed bool
 }
 
@@ -110,18 +113,27 @@ func (d *Database) IndexRange() (int64, int64, error) {
 	return res.M2, res.M1, nil
 }
 
-func (d *Database) GetUnprocessedPotentialGitLabs() ([]Instance, error) {
+func (d *Database) GetUnprocessedInstances() ([]Instance, error) {
 	var instances []Instance
-	err := d.db.Where("processed = false").Where("name like 'gitlab.%'").Find(&instances).Error
+	err := d.db.Where("processed = false").Where("name like 'gitlab.%'").Where("name not like 'gitlab.git%'").Find(&instances).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get unprocessed instances")
 	}
 	return instances, nil
 }
 
+func (d *Database) GetUnprocessedRepositories() ([]Repository, error) {
+	var repos []Repository
+	err := d.db.Where("processed = false").Preload(clause.Associations).Find(&repos).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get unprocessed repositories")
+	}
+	return repos, nil
+}
+
 func (d *Database) AddGitLab(g GitLab) error {
 	return d.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Create(&g).Error
+		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&g).Error
 		if err != nil {
 			return err
 		}
@@ -135,6 +147,10 @@ func (d *Database) SetGitlabProcessed(gitlabID int) error {
 
 func (d *Database) SetInstanceProcessed(instanceID int) error {
 	return d.db.Table("instances").Where("id = ?", instanceID).Update("processed", true).Error
+}
+
+func (d *Database) SetRepositoryProcessed(repositoryID int) error {
+	return d.db.Table("repositories").Where("id = ?", repositoryID).Update("processed", true).Error
 }
 
 func (d *Database) StoreCertificates(certs []Certificate) error {
@@ -152,21 +168,8 @@ func (d *Database) StoreCertificates(certs []Certificate) error {
 	})
 }
 
-func (d *Database) LogFinding(f *GitFinding) error {
-	if len(f.Finding.Secret) > 50 {
-		f.Secret = fmt.Sprint(f.Secret[:50], "...")
-	}
-	url := fmt.Sprintf("https://%s/%s#L%d-%d", f.Repository.GitLab.Instance.Name, f.File, f.StartLine, f.EndLine)
-	finding := Finding{
-		RepositoryID: f.Repository.ID,
-		Secret:       f.Secret,
-		Commit:       f.Commit,
-		StartLine:    f.StartLine,
-		EndLine:      f.EndLine,
-		File:         f.File,
-		URL:          url,
-	}
-	err := d.db.Save(&finding).Error
+func (d *Database) LogFinding(finding *Finding) error {
+	err := d.db.Save(finding).Error
 	if err != nil {
 		return errors.Wrap(err, "could not insert finding")
 	}
@@ -182,8 +185,29 @@ func (d *Database) GetUnprocessedGitLabs() ([]GitLab, error) {
 	return gl, nil
 }
 
+func (d *Database) InsertProjects(gitlab *GitLab, projects []*gitlab.Project) error {
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		for _, r := range projects {
+			repo := Repository{
+				GitLabID:  gitlab.ID,
+				Name:      r.PathWithNamespace,
+				Processed: false,
+			}
+			err := tx.Save(&repo).Error
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (g *GitLab) URL() string {
-	return fmt.Sprintf("https://%s/api/v4", g.Instance.Name)
+	return fmt.Sprintf("%s/api/v4", g.BaseURL)
+}
+
+func (r *Repository) CloneURL() string {
+	return fmt.Sprintf("%s/%s", r.GitLab.BaseURL, r.Name)
 }
 
 //func (d *Database) AddGitlabIfNotExists(g *GitlabInstance) error {
