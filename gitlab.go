@@ -10,6 +10,7 @@ import (
 	"github.com/zricethezav/gitleaks/v8/report"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,9 @@ func RepositoryInputWorker(inputChan chan<- Repository) {
 	defer db.Close()
 
 	repositories, err := db.GetUnprocessedRepositories()
+	rand.Shuffle(len(repositories), func(i, j int) {
+		repositories[i], repositories[j] = repositories[j], repositories[i]
+	})
 	for _, repository := range repositories {
 		inputChan <- repository
 	}
