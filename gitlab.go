@@ -148,7 +148,7 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 				}
 			}
 			_ = os.RemoveAll(dir)
-			return
+			continue
 		}
 
 		var findings []report.Finding
