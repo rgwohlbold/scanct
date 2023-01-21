@@ -17,25 +17,7 @@ import (
 	"time"
 )
 
-const maxItemCountPP = 100 // 100 is the maximum defined by the GitLab API
-
-//func (g *GitlabInstance) AddToDBIfNotExists() error {
-//	db, err := NewDatabase()
-//	defer db.Close()
-//	if err != nil {
-//		return errors.Wrap(err, "could not open database")
-//	}
-//	err = db.AddGitlabIfNotExists(g)
-//	if err != nil {
-//		return errors.Wrap(err, "could not add gitlab to database")
-//	}
-//	return nil
-//}
-
-type GitFinding struct {
-	Finding    report.Finding
-	Repository *Repository
-}
+const MaxItemCountPerPage = 100 // 100 is the maximum defined by the GitLab API
 
 type ScanRepositoriesConfig struct {
 	GitLab         *GitLab

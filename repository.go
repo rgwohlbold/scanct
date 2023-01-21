@@ -19,7 +19,7 @@ func ProcessGitlab(db *Database, gl *GitLab) error {
 			OrderBy: gitlab.String("name"),
 			ListOptions: gitlab.ListOptions{
 				Page:    page,
-				PerPage: maxItemCountPP,
+				PerPage: MaxItemCountPerPage,
 			}}
 
 		projects, res, err = client.Projects.ListProjects(options, nil)
