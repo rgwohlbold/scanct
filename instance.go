@@ -23,6 +23,19 @@ type Certificate struct {
 	Index    int64
 }
 
+func Unique[T comparable](slice []T) []T {
+	uniqMap := make(map[T]struct{})
+	for _, v := range slice {
+		uniqMap[v] = struct{}{}
+	}
+
+	uniqSlice := make([]T, 0, len(uniqMap))
+	for v := range uniqMap {
+		uniqSlice = append(uniqSlice, v)
+	}
+	return uniqSlice
+}
+
 func ConnectLog(config *CTConfig) (*client.LogClient, error) {
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
@@ -50,7 +63,7 @@ func CTProcessWorker(config *CTConfig, startChan <-chan int64, certChan chan<- [
 		if !ok {
 			return
 		}
-		end := start + int64(config.GetEntriesBatchSize) + 1
+		end := start + config.GetEntriesBatchSize + 1
 		var entries []ct.LogEntry
 
 		for i := 0; i < config.GetEntriesRetries; i++ {
@@ -73,13 +86,20 @@ func CTProcessWorker(config *CTConfig, startChan <-chan int64, certChan chan<- [
 			}
 			if cert != nil {
 				certs[i].Subjects = append(certs[i].Subjects, cert.Subject.CommonName)
+				for _, name := range cert.Subject.ExtraNames {
+					certs[i].Subjects = append(certs[i].Subjects, name.Value.(string))
+				}
 			} else {
 				precert, err := entry.Leaf.Precertificate()
 				if err != nil {
 					log.Fatal().Err(err)
 				}
 				certs[i].Subjects = append(certs[i].Subjects, precert.Subject.CommonName)
+				for _, name := range precert.Subject.ExtraNames {
+					certs[i].Subjects = append(certs[i].Subjects, name.Value.(string))
+				}
 			}
+			certs[i].Subjects = Unique(certs[i].Subjects)
 		}
 		certChan <- certs
 	}
