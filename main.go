@@ -18,7 +18,7 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	command := GetSubcommand()
 	if command == CTCommand {
 		config := CTConfig{URL: "https://oak.ct.letsencrypt.org/2023/", GetEntriesBatchSize: 256, GetEntriesRetries: 5, NumCerts: math.MaxInt64}

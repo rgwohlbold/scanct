@@ -18,8 +18,8 @@ type Database struct {
 
 type Instance struct {
 	ID        int
-	Name      string
-	Index     int64 `gorm:"index:index_index,unique"`
+	Name      string `gorm:"index:index_name"`
+	Index     int64  `gorm:"index:index_index,unique"`
 	Processed bool
 }
 
