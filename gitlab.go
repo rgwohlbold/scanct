@@ -150,6 +150,8 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 				EndLine:    f.EndLine,
 				File:       f.File,
 				URL:        fmt.Sprintf("%s/blob/%s/%s#L%d-%d", repository.CloneURL(), f.Commit, f.File, f.StartLine, f.EndLine),
+				Rule:       f.RuleID,
+				CommitDate: f.Date,
 			}
 		}
 		err = os.RemoveAll(dir)

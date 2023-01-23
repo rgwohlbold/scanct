@@ -53,6 +53,8 @@ type Finding struct {
 	EndLine      int
 	File         string
 	URL          string
+	CommitDate   string
+	Rule         string
 }
 
 const DatabaseFile = "./instances.db"
