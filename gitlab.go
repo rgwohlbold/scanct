@@ -19,12 +19,6 @@ import (
 
 const MaxItemCountPerPage = 100 // 100 is the maximum defined by the GitLab API
 
-type ScanRepositoriesConfig struct {
-	GitLab         *GitLab
-	TempDirectory  string
-	GitLabApiToken string
-}
-
 func CloneRepository(r *Repository, dir string) (*git.Repository, error) {
 	localCtx, cancel := context.WithTimeout(context.Background(), CloneRepositoryTimeout)
 	defer cancel()
@@ -184,22 +178,8 @@ func RepositoryOutputWorker(outputChan <-chan Finding) {
 	}
 }
 
-//func printFinding(url string, f report.GitFinding) {
-//	const maxLength = 50
-//	event := log.Warn()
-//	if len(f.Secret) > 50 {
-//		event.Str("secret", fmt.Sprintf("%s...", f.Secret[:maxLength]))
-//	} else {
-//		event.Str("secret", f.Secret)
-//	}
-//	event.Str("file", f.File).Str("url", url).Str("commit", f.Commit).Int("startLine", f.StartLine).Int("endLine", f.StartLine).Str("rule", f.RuleID).Msg("potential leak")
-//}
-
 const RepositoryProcessWorkers = 5
 const CloneRepositoryTimeout = 60 * time.Second
-
-func ScanRepositories(config *ScanRepositoriesConfig) {
-}
 
 func RunSecretsCommand() {
 	secretsCmd := flag.NewFlagSet("secrets", flag.ExitOnError)

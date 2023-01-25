@@ -30,7 +30,7 @@ func main() {
 		}
 		RunCTCommand(&config)
 	} else if command == FilterInstanceCommand {
-		RunFilterCommand()
+		RunFilterGitlabCommand()
 	} else if command == RepositoryCommand {
 		RunRepositoryCommand()
 	} else if command == SecretsCommand {
