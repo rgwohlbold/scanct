@@ -16,7 +16,7 @@ const GitlabRegisterMagicString = "<a data-qa-selector=\"register_link\" href=\"
 type GitlabFilter struct{}
 
 func (g GitlabFilter) UnprocessedInstances(db *Database) ([]Instance, error) {
-	return db.GetUnprocessedInstances()
+	return db.GetUnprocessedInstancesForGitlab()
 }
 
 func (g GitlabFilter) ProcessInstance(instance *Instance) (GitLab, error) {

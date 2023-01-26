@@ -30,7 +30,17 @@ func main() {
 		}
 		RunCTCommand(&config)
 	} else if command == FilterInstanceCommand {
-		RunFilterGitlabCommand()
+		if len(os.Args) < 3 {
+			log.Fatal().Msg("missing filter name, either gitlab or jenkins")
+		}
+		filterName := os.Args[2]
+		if filterName == "gitlab" {
+			RunFilterGitlabCommand()
+		} else if filterName == "jenkins" {
+			RunFilterJenkinsCommand()
+		} else {
+			log.Fatal().Msg("unknown filter name, either gitlab or jenkins")
+		}
 	} else if command == RepositoryCommand {
 		RunRepositoryCommand()
 	} else if command == SecretsCommand {

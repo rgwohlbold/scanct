@@ -35,6 +35,22 @@ type GitLab struct {
 	BaseURL     string `gorm:"uniqueIndex:git_labs_base_url"`
 }
 
+func (g GitLab) GetInstanceID() int {
+	return g.InstanceID
+}
+
+type Jenkins struct {
+	ID           int
+	InstanceID   int
+	Instance     Instance `gorm:"foreignKey:InstanceID"`
+	AnonymousAPI bool
+	BaseURL      string `gorm:"uniqueIndex:jenkins_base_url"`
+}
+
+func (j Jenkins) GetInstanceID() int {
+	return j.InstanceID
+}
+
 type Repository struct {
 	ID        int
 	GitLabID  int    `gorm:"uniqueIndex:repo"`
@@ -73,7 +89,7 @@ func NewDatabase() (Database, error) {
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open database")
 	}
-	err = db.AutoMigrate(&Instance{}, &GitLab{}, &Repository{}, &Finding{})
+	err = db.AutoMigrate(&Instance{}, &GitLab{}, &Jenkins{}, &Repository{}, &Finding{})
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open migrate instance")
 	}
@@ -115,9 +131,18 @@ func (d *Database) IndexRange() (int64, int64, error) {
 	return res.M2, res.M1, nil
 }
 
-func (d *Database) GetUnprocessedInstances() ([]Instance, error) {
+func (d *Database) GetUnprocessedInstancesForGitlab() ([]Instance, error) {
 	var instances []Instance
 	err := d.db.Where("processed = false").Where("name like 'gitlab.%'").Where("name not like 'gitlab.git%'").Find(&instances).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get unprocessed instances")
+	}
+	return instances, nil
+}
+
+func (d *Database) GetUnprocessedInstancesForJenkins() ([]Instance, error) {
+	var instances []Instance
+	err := d.db.Where("processed = false").Where("name like 'jenkins.%'").Find(&instances).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get unprocessed instances")
 	}
@@ -140,6 +165,16 @@ func (d *Database) AddGitLab(g GitLab) error {
 			return err
 		}
 		return tx.Where("id = ?", g.InstanceID).Set("processed", true).Error
+	})
+}
+
+func (d *Database) AddJenkins(j Jenkins) error {
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&j).Error
+		if err != nil {
+			return err
+		}
+		return tx.Where("id = ?", j.InstanceID).Set("processed", true).Error
 	})
 }
 
@@ -204,7 +239,7 @@ func (d *Database) InsertProjects(gitlab *GitLab, projects []*gitlab.Project) er
 	})
 }
 
-func (g *GitLab) URL() string {
+func (g GitLab) URL() string {
 	return fmt.Sprintf("%s/api/v4", g.BaseURL)
 }
 
