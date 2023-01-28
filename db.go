@@ -45,6 +45,15 @@ type Jenkins struct {
 	Instance     Instance `gorm:"foreignKey:InstanceID"`
 	AnonymousAPI bool
 	BaseURL      string `gorm:"uniqueIndex:jenkins_base_url"`
+	Processed    bool
+}
+
+type JenkinsJob struct {
+	ID        int
+	JenkinsID int
+	Jenkins   Jenkins `gorm:"foreignKey:JenkinsID"`
+	Name      string
+	URL       string `gorm:"uniqueIndex:jenkins_jobs_url"`
 }
 
 func (j Jenkins) GetInstanceID() int {
@@ -89,7 +98,7 @@ func NewDatabase() (Database, error) {
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open database")
 	}
-	err = db.AutoMigrate(&Instance{}, &GitLab{}, &Jenkins{}, &Repository{}, &Finding{})
+	err = db.AutoMigrate(&Instance{}, &GitLab{}, &Jenkins{}, &JenkinsJob{}, &Repository{}, &Finding{})
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open migrate instance")
 	}
@@ -168,14 +177,8 @@ func (d *Database) AddGitLab(g GitLab) error {
 	})
 }
 
-func (d *Database) AddJenkins(j Jenkins) error {
-	return d.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&j).Error
-		if err != nil {
-			return err
-		}
-		return tx.Where("id = ?", j.InstanceID).Set("processed", true).Error
-	})
+func (d *Database) AddJenkins(j []Jenkins) error {
+	return d.db.Create(j).Error
 }
 
 func (d *Database) SetGitlabProcessed(gitlabID int) error {
@@ -191,18 +194,17 @@ func (d *Database) SetRepositoryProcessed(repositoryID int) error {
 }
 
 func (d *Database) StoreCertificates(certs []Certificate) error {
-	return d.db.Transaction(func(tx *gorm.DB) error {
-		for _, cert := range certs {
-			for _, subject := range cert.Subjects {
-				instance := Instance{Index: cert.Index, Name: subject, Processed: false}
-				err := tx.Save(&instance).Error
-				if err != nil {
-					return err
-				}
-			}
+	instances := make([]Instance, len(certs))
+	for _, cert := range certs {
+		for _, subject := range cert.Subjects {
+			instances = append(instances, Instance{
+				Name:      subject,
+				Index:     cert.Index,
+				Processed: false,
+			})
 		}
-		return nil
-	})
+	}
+	return d.db.Create(&instances).Error
 }
 
 func (d *Database) LogFinding(finding *Finding) error {
@@ -237,6 +239,23 @@ func (d *Database) InsertProjects(gitlab *GitLab, projects []*gitlab.Project) er
 		}
 		return nil
 	})
+}
+
+func (d *Database) GetUnprocessedJenkins() ([]Jenkins, error) {
+	var j []Jenkins
+	err := d.db.Where("processed = false").Preload(clause.Associations).Find(&j).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get unprocessed jenkins")
+	}
+	return j, nil
+}
+
+func (d *Database) SetJenkinsProcessed(id int) error {
+	return d.db.Table("jenkins").Where("id = ?", id).Update("processed", true).Error
+}
+
+func (d *Database) AddJenkinsJob(o []JenkinsJob) error {
+	return d.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&o).Error
 }
 
 func (g GitLab) URL() string {

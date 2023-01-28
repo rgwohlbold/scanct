@@ -200,12 +200,4 @@ func RunSecretsCommand() {
 			OutputBuffer:  100,
 		}.Run()
 	}
-	//return SecretsCommand, &ScanRepositoriesConfig{
-	//	Instance: &GitlabInstance{
-	//		GitlabID: -1,
-	//		Domain:   *instanceFlag,
-	//	},
-	//	TempDirectory:  "/tmp",
-	//	GitLabApiToken: *tokenFlag,
-	//}, err
 }

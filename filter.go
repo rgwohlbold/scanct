@@ -6,14 +6,14 @@ import (
 
 type Filter[I, O any] interface {
 	UnprocessedInstances(db *Database) ([]I, error)
-	ProcessInstance(*I) (O, error)
+	ProcessInstance(*I) ([]O, error)
 	SetProcessed(*Database, *I) error
-	SaveResult(*Database, O) error
+	SaveResult(*Database, []O) error
 }
 
 type FilterResult[I, O any] struct {
 	Input  I
-	Output O
+	Output []O
 	Error  error
 }
 
@@ -59,10 +59,10 @@ func FilterOutputWorker[I, O any](filter Filter[I, O], resultsChan <-chan Filter
 		if !ok {
 			return
 		}
-		if result.Error == nil {
+		if result.Error == nil && len(result.Output) > 0 {
 			err = filter.SaveResult(&db, result.Output)
 			if err != nil {
-				log.Fatal().Err(err).Msg("error saving result")
+				log.Fatal().Err(err).Msg("could not save result")
 			}
 		}
 		err = filter.SetProcessed(&db, &result.Input)

@@ -42,7 +42,17 @@ func main() {
 			log.Fatal().Msg("unknown filter name, either gitlab or jenkins")
 		}
 	} else if command == RepositoryCommand {
-		RunRepositoryCommand()
+		if len(os.Args) < 3 {
+			log.Fatal().Msg("missing repository name, either gitlab or jenkins")
+		}
+		repositoryName := os.Args[2]
+		if repositoryName == "gitlab" {
+			RunRepositoryCommand()
+		} else if repositoryName == "jenkins" {
+			RunJenkinsProcessor()
+		} else {
+			log.Fatal().Msg("unknown repository name, either gitlab or jenkins")
+		}
 	} else if command == SecretsCommand {
 		RunSecretsCommand()
 	} else {
