@@ -133,7 +133,7 @@ func (d *Database) IndexRange() (int64, int64, error) {
 
 func (d *Database) GetUnprocessedInstancesForGitlab() ([]Instance, error) {
 	var instances []Instance
-	err := d.db.Where("processed = false").Where("name like 'gitlab.%'").Where("name not like 'gitlab.git%'").Find(&instances).Error
+	err := d.db.Where("processed = false").Where("name between 'gitlab.' and 'gitlab./'").Where("name not like 'gitlab.git%'").Find(&instances).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get unprocessed instances")
 	}
@@ -142,7 +142,7 @@ func (d *Database) GetUnprocessedInstancesForGitlab() ([]Instance, error) {
 
 func (d *Database) GetUnprocessedInstancesForJenkins() ([]Instance, error) {
 	var instances []Instance
-	err := d.db.Where("processed = false").Where("name like 'jenkins.%'").Find(&instances).Error
+	err := d.db.Where("processed = false").Where("name between 'jenkins.' and 'jenkins/'").Find(&instances).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get unprocessed instances")
 	}

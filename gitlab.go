@@ -130,32 +130,32 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 		var findings []report.Finding
 		findings, err = FindingsForRepository(dir)
 		if err != nil {
-			log.Fatal().Err(err).Str("repository", url).Msg("could not get findings")
-		}
-		for _, f := range findings {
-			if len(f.Secret) > 50 {
-				f.Secret = fmt.Sprint(f.Secret[:50], "...")
+			log.Error().Err(err).Str("repository", url).Msg("could not get findings")
+		} else {
+			for _, f := range findings {
+				if len(f.Secret) > 50 {
+					f.Secret = fmt.Sprint(f.Secret[:50], "...")
+				}
+				outputChan <- Finding{
+					Repository: repository,
+					Secret:     f.Secret,
+					Commit:     f.Commit,
+					StartLine:  f.StartLine,
+					EndLine:    f.EndLine,
+					File:       f.File,
+					URL:        fmt.Sprintf("%s/blob/%s/%s#L%d-%d", repository.CloneURL(), f.Commit, f.File, f.StartLine, f.EndLine),
+					Rule:       f.RuleID,
+					CommitDate: f.Date,
+				}
 			}
-			outputChan <- Finding{
-				Repository: repository,
-				Secret:     f.Secret,
-				Commit:     f.Commit,
-				StartLine:  f.StartLine,
-				EndLine:    f.EndLine,
-				File:       f.File,
-				URL:        fmt.Sprintf("%s/blob/%s/%s#L%d-%d", repository.CloneURL(), f.Commit, f.File, f.StartLine, f.EndLine),
-				Rule:       f.RuleID,
-				CommitDate: f.Date,
+			err = db.SetRepositoryProcessed(repository.ID)
+			if err != nil {
+				log.Fatal().Err(err).Msg("could not set repository processed")
 			}
 		}
 		err = os.RemoveAll(dir)
 		if err != nil {
 			log.Fatal().Err(err).Msg("could not remove clone dir")
-		}
-
-		err = db.SetRepositoryProcessed(repository.ID)
-		if err != nil {
-			log.Fatal().Err(err).Msg("could not set repository processed")
 		}
 	}
 }
