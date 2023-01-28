@@ -12,6 +12,10 @@ const JenkinsMagicURL = "/api/json"
 
 type JenkinsFilter struct{}
 
+func (g JenkinsFilter) SetProcessed(db *Database, i *Instance) error {
+	return db.SetInstanceProcessed(i.ID)
+}
+
 func (g JenkinsFilter) UnprocessedInstances(db *Database) ([]Instance, error) {
 	return db.GetUnprocessedInstancesForJenkins()
 }
@@ -44,5 +48,5 @@ func (g JenkinsFilter) SaveResult(db *Database, result Jenkins) error {
 }
 
 func RunFilterJenkinsCommand() {
-	RunFilter[Jenkins](JenkinsFilter{}, 5)
+	RunFilter[Instance, Jenkins](JenkinsFilter{}, 5)
 }
