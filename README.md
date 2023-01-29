@@ -18,7 +18,7 @@ Currently, the following software is detected:
 
 ## Usage
 
-All flags are documented in [main.go](blob/main/cmd/scanct/main.go).
+All flags are documented in [main.go](cmd/scanct/main.go).
 scanct stores all its information in a SQLite database, `instance.db`.
 This makes it resilient to restarts, as entries that have not been fully processed are retried on the next run.
 
