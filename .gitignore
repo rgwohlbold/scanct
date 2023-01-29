@@ -10,3 +10,8 @@ build.sh
 vendor/
 build/
 .vscode/
+!.gitignore
+.*
+.idea
+scanct
+*.db
