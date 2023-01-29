@@ -14,11 +14,11 @@ import (
 
 type JenkinsSecretsFinder struct{}
 
-func (f JenkinsSecretsFinder) UnprocessedInstances(db *scanct.Database) ([]scanct.JenkinsJob, error) {
+func (f JenkinsSecretsFinder) UnprocessedInputs(db *scanct.Database) ([]scanct.JenkinsJob, error) {
 	return db.GetUnprocessedJenkinsJobs()
 }
 
-func (_ JenkinsSecretsFinder) ProcessInstance(job *scanct.JenkinsJob) ([]scanct.JenkinsFinding, error) {
+func (_ JenkinsSecretsFinder) Process(job *scanct.JenkinsJob) ([]scanct.JenkinsFinding, error) {
 	log.Info().Str("job", job.URL).Msg("processing job")
 	httpClient := http.Client{
 		Timeout: 30 * time.Second,
@@ -95,6 +95,6 @@ func (_ JenkinsSecretsFinder) SetProcessed(db *scanct.Database, job *scanct.Jenk
 	return db.SetJenkinsJobProcessed(job)
 }
 
-func RunJenkinsSecretsFinder() {
-	scanct.RunFilter[scanct.JenkinsJob, scanct.JenkinsFinding](JenkinsSecretsFinder{}, 5)
+func ScanSecrets() {
+	scanct.RunProcessStep[scanct.JenkinsJob, scanct.JenkinsFinding](JenkinsSecretsFinder{}, 5)
 }

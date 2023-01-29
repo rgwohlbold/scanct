@@ -182,7 +182,7 @@ func RepositoryOutputWorker(outputChan <-chan scanct.Finding) {
 const RepositoryProcessWorkers = 5
 const CloneRepositoryTimeout = 60 * time.Second
 
-func RunSecretsCommand() {
+func ScanSecrets() {
 	secretsCmd := flag.NewFlagSet("secrets", flag.ExitOnError)
 
 	instanceFlag := secretsCmd.String("instance", "", "GitLab instance to scan")

@@ -5,25 +5,25 @@ import (
 	"math/rand"
 )
 
-type Filter[I, O any] interface {
-	UnprocessedInstances(db *Database) ([]I, error)
-	ProcessInstance(*I) ([]O, error)
+type ProcessStep[I, O any] interface {
+	UnprocessedInputs(db *Database) ([]I, error)
+	Process(*I) ([]O, error)
 	SetProcessed(*Database, *I) error
 	SaveResult(*Database, []O) error
 }
 
-type FilterResult[I, O any] struct {
+type ProcessResult[I, O any] struct {
 	Input  I
 	Output []O
 	Error  error
 }
 
-func FilterInputWorker[I, O any](filter Filter[I, O], instanceChan chan<- I) {
+func FilterInputWorker[I, O any](filter ProcessStep[I, O], instanceChan chan<- I) {
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
 	}
-	potentialInstances, err := filter.UnprocessedInstances(&db)
+	potentialInstances, err := filter.UnprocessedInputs(&db)
 	db.Close()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not get unprocessed instances")
@@ -38,14 +38,14 @@ func FilterInputWorker[I, O any](filter Filter[I, O], instanceChan chan<- I) {
 	close(instanceChan)
 }
 
-func FilterProcessWorker[I, O any](filter Filter[I, O], instanceChan <-chan I, resultChan chan<- FilterResult[I, O]) {
+func FilterProcessWorker[I, O any](filter ProcessStep[I, O], instanceChan <-chan I, resultChan chan<- ProcessResult[I, O]) {
 	for {
 		instance, ok := <-instanceChan
 		if !ok {
 			return
 		}
-		result, err := filter.ProcessInstance(&instance)
-		resultChan <- FilterResult[I, O]{
+		result, err := filter.Process(&instance)
+		resultChan <- ProcessResult[I, O]{
 			Input:  instance,
 			Output: result,
 			Error:  err,
@@ -53,7 +53,7 @@ func FilterProcessWorker[I, O any](filter Filter[I, O], instanceChan <-chan I, r
 	}
 }
 
-func FilterOutputWorker[I, O any](filter Filter[I, O], resultsChan <-chan FilterResult[I, O]) {
+func FilterOutputWorker[I, O any](filter ProcessStep[I, O], resultsChan <-chan ProcessResult[I, O]) {
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
@@ -79,16 +79,16 @@ func FilterOutputWorker[I, O any](filter Filter[I, O], resultsChan <-chan Filter
 
 }
 
-func RunFilter[I, O any](filter Filter[I, O], workers int) {
-	Fan[I, FilterResult[I, O]]{
+func RunProcessStep[I, O any](step ProcessStep[I, O], workers int) {
+	Fan[I, ProcessResult[I, O]]{
 		InputWorker: func(inputChan chan<- I) {
-			FilterInputWorker(filter, inputChan)
+			FilterInputWorker(step, inputChan)
 		},
-		ProcessWorker: func(instanceChan <-chan I, resultChan chan<- FilterResult[I, O]) {
-			FilterProcessWorker(filter, instanceChan, resultChan)
+		ProcessWorker: func(instanceChan <-chan I, resultChan chan<- ProcessResult[I, O]) {
+			FilterProcessWorker(step, instanceChan, resultChan)
 		},
-		OutputWorker: func(resultsChan <-chan FilterResult[I, O]) {
-			FilterOutputWorker(filter, resultsChan)
+		OutputWorker: func(resultsChan <-chan ProcessResult[I, O]) {
+			FilterOutputWorker(step, resultsChan)
 		},
 		Workers:      workers,
 		InputBuffer:  100,

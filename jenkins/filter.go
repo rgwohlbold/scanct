@@ -17,11 +17,11 @@ func (g JenkinsFilter) SetProcessed(db *scanct.Database, i *scanct.Instance) err
 	return db.SetInstanceProcessed(i.ID)
 }
 
-func (g JenkinsFilter) UnprocessedInstances(db *scanct.Database) ([]scanct.Instance, error) {
+func (g JenkinsFilter) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForJenkins()
 }
 
-func (g JenkinsFilter) ProcessInstance(instance *scanct.Instance) ([]scanct.Jenkins, error) {
+func (g JenkinsFilter) Process(instance *scanct.Instance) ([]scanct.Jenkins, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -63,6 +63,6 @@ func (g JenkinsFilter) SaveResult(db *scanct.Database, result []scanct.Jenkins) 
 	return db.AddJenkins(result)
 }
 
-func RunFilterJenkinsCommand() {
-	scanct.RunFilter[scanct.Instance, scanct.Jenkins](JenkinsFilter{}, 5)
+func FilterInstances() {
+	scanct.RunProcessStep[scanct.Instance, scanct.Jenkins](JenkinsFilter{}, 5)
 }

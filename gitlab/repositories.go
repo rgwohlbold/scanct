@@ -36,7 +36,7 @@ func ProcessGitlab(db *scanct.Database, gl *scanct.GitLab) error {
 	return db.SetGitlabProcessed(gl.ID)
 }
 
-func RunRepositoryCommand() {
+func ImportRepositories() {
 	db, err := scanct.NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not open database")

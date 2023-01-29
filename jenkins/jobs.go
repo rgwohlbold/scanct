@@ -21,11 +21,11 @@ type JenkinsJobsApiResponseJob struct {
 
 type JenkinsProcessor struct{}
 
-func (j JenkinsProcessor) UnprocessedInstances(db *scanct.Database) ([]scanct.Jenkins, error) {
+func (j JenkinsProcessor) UnprocessedInputs(db *scanct.Database) ([]scanct.Jenkins, error) {
 	return db.GetUnprocessedJenkins()
 }
 
-func (j JenkinsProcessor) ProcessInstance(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob, error) {
+func (j JenkinsProcessor) Process(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob, error) {
 	log.Info().Str("jenkins", jenkins.BaseURL).Msg("processing jenkins")
 	httpClient := http.Client{
 		Timeout: 5 * time.Second,
@@ -66,6 +66,6 @@ func (j JenkinsProcessor) SaveResult(db *scanct.Database, o []scanct.JenkinsJob)
 	return db.AddJenkinsJob(o)
 }
 
-func RunJenkinsProcessor() {
-	scanct.RunFilter[scanct.Jenkins, scanct.JenkinsJob](JenkinsProcessor{}, 5)
+func ImportJobs() {
+	scanct.RunProcessStep[scanct.Jenkins, scanct.JenkinsJob](JenkinsProcessor{}, 5)
 }

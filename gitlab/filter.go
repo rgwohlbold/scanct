@@ -20,11 +20,11 @@ func (g GitlabFilter) SetProcessed(db *scanct.Database, i *scanct.Instance) erro
 	return db.SetGitlabProcessed(i.ID)
 }
 
-func (g GitlabFilter) UnprocessedInstances(db *scanct.Database) ([]scanct.Instance, error) {
+func (g GitlabFilter) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForGitlab()
 }
 
-func (g GitlabFilter) ProcessInstance(instance *scanct.Instance) ([]scanct.GitLab, error) {
+func (g GitlabFilter) Process(instance *scanct.Instance) ([]scanct.GitLab, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -65,6 +65,6 @@ func (g GitlabFilter) SaveResult(db *scanct.Database, result []scanct.GitLab) er
 	return nil
 }
 
-func RunFilterGitlabCommand() {
-	scanct.RunFilter[scanct.Instance, scanct.GitLab](GitlabFilter{}, 5)
+func FilterInstances() {
+	scanct.RunProcessStep[scanct.Instance, scanct.GitLab](GitlabFilter{}, 5)
 }
