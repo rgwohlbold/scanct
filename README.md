@@ -16,6 +16,12 @@ Currently, the following software is detected:
 3. Build the binary: `go build -o scanct cmd/scanct/main.go`.
 4. Run the binary: `./scanct <options>`.
 
+## Usage
+
+All flags are documented in [main.go](blob/main/cmd/scanct/main.go).
+scanct stores all its information in a SQLite database, `instance.db`.
+This makes it resilient to restarts, as entries that have not been fully processed are retried on the next run.
+
 ## License
 
 `scanct` is licensed under the MIT license. See [LICENSE](LICENSE) for details.
