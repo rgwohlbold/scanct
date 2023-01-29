@@ -1,7 +1,8 @@
-package main
+package jenkins
 
 import (
 	"fmt"
+	"github.com/rgwohlbold/scanct"
 	"github.com/rs/zerolog/log"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
@@ -13,11 +14,11 @@ import (
 
 type JenkinsSecretsFinder struct{}
 
-func (f JenkinsSecretsFinder) UnprocessedInstances(db *Database) ([]JenkinsJob, error) {
+func (f JenkinsSecretsFinder) UnprocessedInstances(db *scanct.Database) ([]scanct.JenkinsJob, error) {
 	return db.GetUnprocessedJenkinsJobs()
 }
 
-func (_ JenkinsSecretsFinder) ProcessInstance(job *JenkinsJob) ([]JenkinsFinding, error) {
+func (_ JenkinsSecretsFinder) ProcessInstance(job *scanct.JenkinsJob) ([]scanct.JenkinsFinding, error) {
 	log.Info().Str("job", job.URL).Msg("processing job")
 	httpClient := http.Client{
 		Timeout: 30 * time.Second,
@@ -34,7 +35,7 @@ func (_ JenkinsSecretsFinder) ProcessInstance(job *JenkinsJob) ([]JenkinsFinding
 		//log.Info().Int("status", resp.StatusCode).Str("url", url).Msg("unexpected status code")
 		return nil, nil
 	}
-	zipPath := fmt.Sprintf("/tmp/%s.zip", GetHash(job.Name))
+	zipPath := fmt.Sprintf("/tmp/%s.zip", scanct.Hash(job.Name))
 	var f *os.File
 	f, err = os.Create(zipPath)
 	if err != nil {
@@ -42,16 +43,16 @@ func (_ JenkinsSecretsFinder) ProcessInstance(job *JenkinsJob) ([]JenkinsFinding
 	}
 	_, err = io.Copy(f, resp.Body)
 	if err != nil {
-		panicIfError(f.Close())
+		scanct.PanicIfError(f.Close())
 		return nil, err
 	}
-	panicIfError(f.Close())
-	defer func() { panicIfError(os.Remove(zipPath)) }()
+	scanct.PanicIfError(f.Close())
+	defer func() { scanct.PanicIfError(os.Remove(zipPath)) }()
 
-	dirPath := fmt.Sprintf("/tmp/%s", GetHash(job.Name))
+	dirPath := fmt.Sprintf("/tmp/%s", scanct.Hash(job.Name))
 
-	err = ExtractZip(zipPath, dirPath)
-	defer func() { panicIfError(os.RemoveAll(dirPath)) }()
+	err = scanct.ExtractZip(zipPath, dirPath)
+	defer func() { scanct.PanicIfError(os.RemoveAll(dirPath)) }()
 
 	if err != nil {
 		return nil, err
@@ -67,13 +68,13 @@ func (_ JenkinsSecretsFinder) ProcessInstance(job *JenkinsJob) ([]JenkinsFinding
 		return nil, err
 	}
 
-	var secrets []JenkinsFinding
+	var secrets []scanct.JenkinsFinding
 	for _, finding := range findings {
 		secret := finding.Secret
 		if len(secret) > 50 {
 			secret = secret[:50] + "..."
 		}
-		secrets = append(secrets, JenkinsFinding{
+		secrets = append(secrets, scanct.JenkinsFinding{
 			JobID:     job.ID,
 			Secret:    secret,
 			StartLine: finding.StartLine,
@@ -86,14 +87,14 @@ func (_ JenkinsSecretsFinder) ProcessInstance(job *JenkinsJob) ([]JenkinsFinding
 	return secrets, nil
 }
 
-func (_ JenkinsSecretsFinder) SaveResult(db *Database, findings []JenkinsFinding) error {
+func (_ JenkinsSecretsFinder) SaveResult(db *scanct.Database, findings []scanct.JenkinsFinding) error {
 	return db.SaveJenkinsFindings(findings)
 }
 
-func (_ JenkinsSecretsFinder) SetProcessed(db *Database, job *JenkinsJob) error {
+func (_ JenkinsSecretsFinder) SetProcessed(db *scanct.Database, job *scanct.JenkinsJob) error {
 	return db.SetJenkinsJobProcessed(job)
 }
 
 func RunJenkinsSecretsFinder() {
-	RunFilter[JenkinsJob, JenkinsFinding](JenkinsSecretsFinder{}, 5)
+	scanct.RunFilter[scanct.JenkinsJob, scanct.JenkinsFinding](JenkinsSecretsFinder{}, 5)
 }

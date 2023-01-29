@@ -1,4 +1,4 @@
-module gitlab.platypwnies.de/cybersecurity-klub-hpi/shhgit
+module github.com/rgwohlbold/scanct
 
 go 1.19
 

@@ -1,10 +1,11 @@
-package main
+package gitlab
 
 import (
 	"context"
 	"flag"
 	"fmt"
 	"github.com/pkg/errors"
+	"github.com/rgwohlbold/scanct"
 	"github.com/rs/zerolog/log"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
@@ -19,7 +20,7 @@ import (
 
 const MaxItemCountPerPage = 100 // 100 is the maximum defined by the GitLab API
 
-func CloneRepository(r *Repository, dir string) (*git.Repository, error) {
+func CloneRepository(r *scanct.Repository, dir string) (*git.Repository, error) {
 	localCtx, cancel := context.WithTimeout(context.Background(), CloneRepositoryTimeout)
 	defer cancel()
 
@@ -43,10 +44,10 @@ func CloneRepository(r *Repository, dir string) (*git.Repository, error) {
 	return repository, nil
 }
 
-func RepositoryInputWorker(inputChan chan<- Repository) {
+func RepositoryInputWorker(inputChan chan<- scanct.Repository) {
 	defer close(inputChan)
 
-	db, err := NewDatabase()
+	db, err := scanct.NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
 	}
@@ -86,8 +87,8 @@ func FindingsForRepository(dir string) ([]report.Finding, error) {
 	return _findings, nil
 }
 
-func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Finding) {
-	db, err := NewDatabase()
+func RepositoryProcessWorker(inputChan <-chan scanct.Repository, outputChan chan<- scanct.Finding) {
+	db, err := scanct.NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
 	}
@@ -101,7 +102,7 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 		url := fmt.Sprintf("%s/%s", repository.GitLab.BaseURL, repository.Name)
 		log.Debug().Str("repository", url).Msg("processing repository")
 
-		dir := filepath.Join("/tmp", GetHash(url))
+		dir := filepath.Join("/tmp", scanct.Hash(url))
 		var res os.FileInfo
 		res, err = os.Stat(dir)
 		if err != nil && !os.IsNotExist(err) {
@@ -136,7 +137,7 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 				if len(f.Secret) > 50 {
 					f.Secret = fmt.Sprint(f.Secret[:50], "...")
 				}
-				outputChan <- Finding{
+				outputChan <- scanct.Finding{
 					Repository: repository,
 					Secret:     f.Secret,
 					Commit:     f.Commit,
@@ -160,8 +161,8 @@ func RepositoryProcessWorker(inputChan <-chan Repository, outputChan chan<- Find
 	}
 }
 
-func RepositoryOutputWorker(outputChan <-chan Finding) {
-	db, err := NewDatabase()
+func RepositoryOutputWorker(outputChan <-chan scanct.Finding) {
+	db, err := scanct.NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create database")
 	}
@@ -191,7 +192,7 @@ func RunSecretsCommand() {
 		log.Fatal().Err(err).Msg("could not parse secrets command")
 	}
 	if *instanceFlag == "" {
-		Fan[Repository, Finding]{
+		scanct.Fan[scanct.Repository, scanct.Finding]{
 			InputWorker:   RepositoryInputWorker,
 			ProcessWorker: RepositoryProcessWorker,
 			OutputWorker:  RepositoryOutputWorker,

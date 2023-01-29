@@ -1,4 +1,4 @@
-package main
+package scanct
 
 import (
 	"archive/zip"
@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func GetHash(s string) string {
+func Hash(s string) string {
 	h := sha1.New()
 	h.Write([]byte(s))
 
@@ -39,7 +39,7 @@ func ExtractZip(src string, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer func() { panicIfError(rc.Close()) }()
+		defer func() { PanicIfError(rc.Close()) }()
 
 		path := filepath.Join(dst, f.Name)
 		if !strings.HasPrefix(path, filepath.Clean(dst)+string(os.PathSeparator)) {
@@ -60,7 +60,7 @@ func ExtractZip(src string, dst string) error {
 			if err != nil {
 				return err
 			}
-			defer func() { panicIfError(f.Close()) }()
+			defer func() { PanicIfError(f.Close()) }()
 
 			_, err = io.Copy(f, rc)
 			if err != nil {
@@ -79,7 +79,7 @@ func ExtractZip(src string, dst string) error {
 	return nil
 }
 
-func panicIfError(err error) {
+func PanicIfError(err error) {
 	if err != nil {
 		panic(err)
 	}

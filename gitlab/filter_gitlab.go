@@ -1,8 +1,9 @@
-package main
+package gitlab
 
 import (
 	"fmt"
 	"github.com/pkg/errors"
+	"github.com/rgwohlbold/scanct"
 	"io"
 	"net/http"
 	"strings"
@@ -15,15 +16,15 @@ const GitlabRegisterMagicString = "<a data-qa-selector=\"register_link\" href=\"
 
 type GitlabFilter struct{}
 
-func (g GitlabFilter) SetProcessed(db *Database, i *Instance) error {
+func (g GitlabFilter) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
 	return db.SetGitlabProcessed(i.ID)
 }
 
-func (g GitlabFilter) UnprocessedInstances(db *Database) ([]Instance, error) {
+func (g GitlabFilter) UnprocessedInstances(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForGitlab()
 }
 
-func (g GitlabFilter) ProcessInstance(instance *Instance) ([]GitLab, error) {
+func (g GitlabFilter) ProcessInstance(instance *scanct.Instance) ([]scanct.GitLab, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -40,7 +41,7 @@ func (g GitlabFilter) ProcessInstance(instance *Instance) ([]GitLab, error) {
 		}
 		bodyStr := string(body)
 		if strings.Contains(bodyStr, GitlabMagicString) {
-			return []GitLab{{
+			return []scanct.GitLab{{
 				InstanceID:  instance.ID,
 				AllowSignup: strings.Contains(bodyStr, GitlabRegisterMagicString),
 				Email:       "",
@@ -54,7 +55,7 @@ func (g GitlabFilter) ProcessInstance(instance *Instance) ([]GitLab, error) {
 	return nil, errors.New("no instance found: no magic string")
 }
 
-func (g GitlabFilter) SaveResult(db *Database, result []GitLab) error {
+func (g GitlabFilter) SaveResult(db *scanct.Database, result []scanct.GitLab) error {
 	for _, r := range result {
 		err := db.AddGitLab(r)
 		if err != nil {
@@ -65,5 +66,5 @@ func (g GitlabFilter) SaveResult(db *Database, result []GitLab) error {
 }
 
 func RunFilterGitlabCommand() {
-	RunFilter[Instance, GitLab](GitlabFilter{}, 5)
+	scanct.RunFilter[scanct.Instance, scanct.GitLab](GitlabFilter{}, 5)
 }

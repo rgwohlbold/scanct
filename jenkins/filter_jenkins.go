@@ -1,8 +1,9 @@
-package main
+package jenkins
 
 import (
 	"fmt"
 	"github.com/pkg/errors"
+	"github.com/rgwohlbold/scanct"
 	"io"
 	"net/http"
 	"time"
@@ -12,15 +13,15 @@ const JenkinsMagicURL = "/api/json"
 
 type JenkinsFilter struct{}
 
-func (g JenkinsFilter) SetProcessed(db *Database, i *Instance) error {
+func (g JenkinsFilter) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
 	return db.SetInstanceProcessed(i.ID)
 }
 
-func (g JenkinsFilter) UnprocessedInstances(db *Database) ([]Instance, error) {
+func (g JenkinsFilter) UnprocessedInstances(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForJenkins()
 }
 
-func (g JenkinsFilter) ProcessInstance(instance *Instance) ([]Jenkins, error) {
+func (g JenkinsFilter) ProcessInstance(instance *scanct.Instance) ([]scanct.Jenkins, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -47,7 +48,7 @@ func (g JenkinsFilter) ProcessInstance(instance *Instance) ([]Jenkins, error) {
 			return nil, err
 		}
 		if resp.Header.Get("x-jenkins") != "" {
-			return []Jenkins{{
+			return []scanct.Jenkins{{
 				InstanceID:   instance.ID,
 				AnonymousAPI: len(string(body)) > 2,
 				BaseURL:      fmt.Sprintf("https://%s", instance.Name),
@@ -58,10 +59,10 @@ func (g JenkinsFilter) ProcessInstance(instance *Instance) ([]Jenkins, error) {
 	return nil, nil
 }
 
-func (g JenkinsFilter) SaveResult(db *Database, result []Jenkins) error {
+func (g JenkinsFilter) SaveResult(db *scanct.Database, result []scanct.Jenkins) error {
 	return db.AddJenkins(result)
 }
 
 func RunFilterJenkinsCommand() {
-	RunFilter[Instance, Jenkins](JenkinsFilter{}, 5)
+	scanct.RunFilter[scanct.Instance, scanct.Jenkins](JenkinsFilter{}, 5)
 }
