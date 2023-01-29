@@ -37,31 +37,31 @@ func main() {
 		scanct.ImportCertificates(&config)
 	} else if os.Args[1] == "jenkins" {
 		if len(os.Args) < 3 {
-			log.Fatal().Msg("no action given. choose either 'filter', 'jobs' or 'scan'.")
+			log.Fatal().Msg("no action given. choose either 'filter', 'jobs' or 'secrets'.")
 		}
 		if os.Args[2] == "filter" {
 			jenkins.FilterInstances()
 		} else if os.Args[2] == "jobs" {
 			jenkins.ImportJobs()
-		} else if os.Args[2] == "scan" {
+		} else if os.Args[2] == "secrets" {
 			jenkins.ScanSecrets()
 		} else {
-			log.Fatal().Msg("unknown action. choose either 'filter', 'jobs' or 'scan'.")
+			log.Fatal().Msg("unknown action. choose either 'filter', 'jobs' or 'secrets'.")
 		}
 	} else if os.Args[1] == "gitlab" {
 		if len(os.Args) < 3 {
-			log.Fatal().Msg("no action given. choose either 'filter', 'repositories' or 'scan'.")
+			log.Fatal().Msg("no action given. choose either 'filter', 'repositories' or 'secrets'.")
 		}
 		if os.Args[2] == "filter" {
 			gitlab.FilterInstances()
 		} else if os.Args[2] == "repositories" {
 			gitlab.ImportRepositories()
-		} else if os.Args[2] == "scan" {
+		} else if os.Args[2] == "secrets" {
 			gitlab.ScanSecrets()
 		} else {
-			log.Fatal().Msg("unknown action. choose either 'filter', 'repositories' or 'scan'.")
+			log.Fatal().Msg("unknown action. choose either 'filter', 'repositories' or 'secrets'.")
 		}
 	} else {
-		log.Fatal().Msg("unknown command. options are: ct, filter, repository, secrets")
+		log.Fatal().Msg("unknown subcommand. choose either 'ct', 'jenkins', 'gitlab'.")
 	}
 }
