@@ -8,8 +8,11 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
+	stdlog "log"
 	"math"
 	"os"
+	"time"
 )
 
 type Database struct {
@@ -108,10 +111,12 @@ func NewDatabase() (Database, error) {
 		_ = f.Close()
 
 	}
-	//db, err := gorm.Open(sqlite.Open(DatabaseFile), &gorm.Config{
-	//	Logger: logger.Default.LogMode(logger.Info),
-	//})
-	db, err := gorm.Open(sqlite.Open(DatabaseFile), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(DatabaseFile), &gorm.Config{
+		Logger: logger.New(stdlog.New(os.Stdout, "\r\n", stdlog.LstdFlags), logger.Config{
+			SlowThreshold: time.Second,
+		}),
+	})
+	//db, err := gorm.Open(sqlite.Open(DatabaseFile), &gorm.Config{})
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open database")
 	}
@@ -137,12 +142,12 @@ func (d *Database) Close() {
 
 func (d *Database) IndexRange() (int64, int64, error) {
 
-	var count int64
-	err := d.db.Model(&Instance{}).Limit(1).Count(&count).Error
+	var instance Instance
+	err := d.db.Limit(1).Find(&instance).Error
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "could not get count")
 	}
-	if count == 0 {
+	if instance.ID == 0 {
 		return math.MaxInt64 / 2, math.MaxInt64 / 2, nil
 	}
 
