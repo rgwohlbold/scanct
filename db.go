@@ -136,12 +136,13 @@ func (d *Database) Close() {
 }
 
 func (d *Database) IndexRange() (int64, int64, error) {
-	var rows int64
-	err := d.db.Raw("select count(*) from instances").Scan(&rows).Error
+
+	var count int64
+	err := d.db.Model(&Instance{}).Limit(1).Count(&count).Error
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "could not count instances")
+		return 0, 0, errors.Wrap(err, "could not get count")
 	}
-	if rows == 0 {
+	if count == 0 {
 		return math.MaxInt64 / 2, math.MaxInt64 / 2, nil
 	}
 
