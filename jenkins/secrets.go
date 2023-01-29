@@ -41,13 +41,13 @@ func (_ SecretsStep) Process(job *scanct.JenkinsJob) ([]scanct.JenkinsFinding, e
 	if err != nil {
 		return nil, err
 	}
+	defer func() { scanct.PanicIfError(os.Remove(zipPath)) }()
 	_, err = io.Copy(f, resp.Body)
 	if err != nil {
 		scanct.PanicIfError(f.Close())
 		return nil, err
 	}
 	scanct.PanicIfError(f.Close())
-	defer func() { scanct.PanicIfError(os.Remove(zipPath)) }()
 
 	dirPath := fmt.Sprintf("/tmp/%s", scanct.Hash(job.Name))
 
