@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/rs/zerolog/log"
+	"math/rand"
 )
 
 type Filter[I, O any] interface {
@@ -28,6 +29,9 @@ func FilterInputWorker[I, O any](filter Filter[I, O], instanceChan chan<- I) {
 		log.Fatal().Err(err).Msg("could not get unprocessed instances")
 	}
 	log.Info().Int("count", len(potentialInstances)).Msg("fetched unprocessed instances")
+	rand.Shuffle(len(potentialInstances), func(i, j int) {
+		potentialInstances[i], potentialInstances[j] = potentialInstances[j], potentialInstances[i]
+	})
 	for _, instance := range potentialInstances {
 		instanceChan <- instance
 	}
@@ -64,6 +68,8 @@ func FilterOutputWorker[I, O any](filter Filter[I, O], resultsChan <-chan Filter
 			if err != nil {
 				log.Fatal().Err(err).Msg("could not save result")
 			}
+		} else if result.Error != nil {
+			log.Error().Err(result.Error).Msg("could not process instance")
 		}
 		err = filter.SetProcessed(&db, &result.Input)
 		if err != nil {

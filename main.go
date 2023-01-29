@@ -10,15 +10,16 @@ import (
 )
 
 func main() {
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	db, err := NewDatabase()
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not open database")
 	}
 	db.Close()
 
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	command := GetSubcommand()
 	if command == CTCommand {
 		config := CTConfig{URL: "https://oak.ct.letsencrypt.org/2023/", GetEntriesBatchSize: 256, GetEntriesRetries: 5, NumCerts: math.MaxInt64}
@@ -54,7 +55,17 @@ func main() {
 			log.Fatal().Msg("unknown repository name, either gitlab or jenkins")
 		}
 	} else if command == SecretsCommand {
-		RunSecretsCommand()
+		if len(os.Args) < 3 {
+			log.Fatal().Msg("missing secrets name, either gitlab or jenkins")
+		}
+		secretsName := os.Args[2]
+		if secretsName == "gitlab" {
+			RunSecretsCommand()
+		} else if secretsName == "jenkins" {
+			RunJenkinsSecretsFinder()
+		} else {
+			log.Fatal().Msg("unknown secrets name, either gitlab or jenkins")
+		}
 	} else {
 		log.Fatal().Msg("unknown command. options are: ct, filter, repository, secrets")
 	}

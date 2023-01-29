@@ -23,6 +23,9 @@ func (g JenkinsFilter) UnprocessedInstances(db *Database) ([]Instance, error) {
 func (g JenkinsFilter) ProcessInstance(instance *Instance) ([]Jenkins, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 	resp, err := client.Get(fmt.Sprintf("https://%s%s", instance.Name, JenkinsMagicURL))
 	if err != nil {
@@ -30,17 +33,29 @@ func (g JenkinsFilter) ProcessInstance(instance *Instance) ([]Jenkins, error) {
 	} else if resp.StatusCode != 200 {
 		return nil, errors.New(fmt.Sprintf("no instance found: status %d", resp.StatusCode))
 	} else {
+		scriptAccess := false
+
+		var resp2 *http.Response
+		resp2, err = client.Get(fmt.Sprintf("https://%s/script", instance.Name))
+		if err == nil && resp2.StatusCode == 200 {
+			scriptAccess = true
+		}
+
 		var body []byte
 		body, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, err
 		}
-		return []Jenkins{{
-			InstanceID:   instance.ID,
-			AnonymousAPI: len(string(body)) > 2 && resp.Header.Get("x-jenkins") != "",
-			BaseURL:      fmt.Sprintf("https://%s", instance.Name),
-		}}, nil
+		if resp.Header.Get("x-jenkins") != "" {
+			return []Jenkins{{
+				InstanceID:   instance.ID,
+				AnonymousAPI: len(string(body)) > 2,
+				BaseURL:      fmt.Sprintf("https://%s", instance.Name),
+				ScriptAccess: scriptAccess,
+			}}, nil
+		}
 	}
+	return nil, nil
 }
 
 func (g JenkinsFilter) SaveResult(db *Database, result []Jenkins) error {

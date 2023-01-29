@@ -34,7 +34,8 @@ func (j JenkinsProcessor) ProcessInstance(jenkins *Jenkins) ([]JenkinsJob, error
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+		log.Info().Str("instance", jenkins.BaseURL).Int("status", resp.StatusCode).Msg("unexpected status code")
+		return nil, nil
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -50,7 +51,7 @@ func (j JenkinsProcessor) ProcessInstance(jenkins *Jenkins) ([]JenkinsJob, error
 		result[i] = JenkinsJob{
 			JenkinsID: jenkins.ID,
 			Name:      job.Name,
-			URL:       job.URL,
+			URL:       fmt.Sprintf("%s/job/%s", jenkins.BaseURL, job.Name),
 		}
 	}
 	return result, nil
