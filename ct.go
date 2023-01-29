@@ -186,7 +186,7 @@ func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 
 const CTWorkers = 30
 
-func RunCTCommand(config *CTConfig) {
+func ImportCertificates(config *CTConfig) {
 	Fan[int64, []Certificate]{
 		InputWorker: func(inputChan chan<- int64) {
 			CTInputWorker(config, inputChan)

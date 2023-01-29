@@ -12,33 +12,6 @@ import (
 	"strconv"
 )
 
-type Subcommand int
-
-const (
-	CTCommand             Subcommand = iota
-	FilterInstanceCommand            = iota
-	SecretsCommand                   = iota
-	RepositoryCommand                = iota
-	NoCommand                        = iota
-)
-
-func GetSubcommand() Subcommand {
-	if len(os.Args) < 2 {
-		return NoCommand
-	}
-	commandMap := map[string]Subcommand{
-		"ct":         CTCommand,
-		"filter":     FilterInstanceCommand,
-		"secrets":    SecretsCommand,
-		"repository": RepositoryCommand,
-	}
-	command, ok := commandMap[os.Args[1]]
-	if !ok {
-		return NoCommand
-	}
-	return command
-}
-
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
@@ -50,8 +23,10 @@ func main() {
 	}
 	db.Close()
 
-	command := GetSubcommand()
-	if command == CTCommand {
+	if len(os.Args) < 2 {
+		log.Fatal().Msg("no subcommand given. choose either 'ct', 'jenkins', 'gitlab'.")
+	}
+	if os.Args[1] == "ct" {
 		config := scanct.CTConfig{URL: "https://oak.ct.letsencrypt.org/2023/", GetEntriesBatchSize: 256, GetEntriesRetries: 5, NumCerts: math.MaxInt64}
 		if len(os.Args) >= 3 {
 			config.NumCerts, err = strconv.ParseInt(os.Args[2], 10, 64)
@@ -59,42 +34,32 @@ func main() {
 				log.Fatal().Err(err).Msg("could not parse number of certs")
 			}
 		}
-		scanct.RunCTCommand(&config)
-	} else if command == FilterInstanceCommand {
+		scanct.ImportCertificates(&config)
+	} else if os.Args[1] == "jenkins" {
 		if len(os.Args) < 3 {
-			log.Fatal().Msg("missing filter name, either gitlab or jenkins")
+			log.Fatal().Msg("no action given. choose either 'import', 'jobs' or 'scan'.")
 		}
-		filterName := os.Args[2]
-		if filterName == "gitlab" {
-			gitlab.RunFilterGitlabCommand()
-		} else if filterName == "jenkins" {
+		if os.Args[2] == "import" {
 			jenkins.RunFilterJenkinsCommand()
-		} else {
-			log.Fatal().Msg("unknown filter name, either gitlab or jenkins")
-		}
-	} else if command == RepositoryCommand {
-		if len(os.Args) < 3 {
-			log.Fatal().Msg("missing repository name, either gitlab or jenkins")
-		}
-		repositoryName := os.Args[2]
-		if repositoryName == "gitlab" {
-			gitlab.RunRepositoryCommand()
-		} else if repositoryName == "jenkins" {
+		} else if os.Args[2] == "jobs" {
 			jenkins.RunJenkinsProcessor()
-		} else {
-			log.Fatal().Msg("unknown repository name, either gitlab or jenkins")
-		}
-	} else if command == SecretsCommand {
-		if len(os.Args) < 3 {
-			log.Fatal().Msg("missing secrets name, either gitlab or jenkins")
-		}
-		secretsName := os.Args[2]
-		if secretsName == "gitlab" {
-			gitlab.RunSecretsCommand()
-		} else if secretsName == "jenkins" {
+		} else if os.Args[2] == "scan" {
 			jenkins.RunJenkinsSecretsFinder()
 		} else {
-			log.Fatal().Msg("unknown secrets name, either gitlab or jenkins")
+			log.Fatal().Msg("unknown action. choose either 'import', 'jobs' or 'scan'.")
+		}
+	} else if os.Args[1] == "gitlab" {
+		if len(os.Args) < 3 {
+			log.Fatal().Msg("no action given. choose either 'import', 'jobs' or 'scan'.")
+		}
+		if os.Args[2] == "import" {
+			gitlab.RunFilterGitlabCommand()
+		} else if os.Args[2] == "jobs" {
+			gitlab.RunRepositoryCommand()
+		} else if os.Args[2] == "scan" {
+			gitlab.RunSecretsCommand()
+		} else {
+			log.Fatal().Msg("unknown action. choose either 'import', 'jobs' or 'scan'.")
 		}
 	} else {
 		log.Fatal().Msg("unknown command. options are: ct, filter, repository, secrets")
