@@ -211,7 +211,7 @@ func (d *Database) SetRepositoryProcessed(repositoryID int) error {
 }
 
 func (d *Database) StoreCertificates(certs []Certificate) error {
-	instances := make([]Instance, len(certs))
+	instances := make([]Instance, 0, len(certs))
 	for _, cert := range certs {
 		for _, subject := range cert.Subjects {
 			instances = append(instances, Instance{
