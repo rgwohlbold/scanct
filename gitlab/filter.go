@@ -10,25 +10,25 @@ import (
 	"time"
 )
 
-const GitlabMagicURL = "/users/sign_in"
-const GitlabMagicString = "<meta content=\"GitLab\" property=\"og:site_name\">"
-const GitlabRegisterMagicString = "<a data-qa-selector=\"register_link\" href=\"/users/sign_up\">Register now</a>"
+const SignInURL = "/users/sign_in"
+const SignInMagicString = "<meta content=\"GitLab\" property=\"og:site_name\">"
+const RegisterMagicString = "<a data-qa-selector=\"register_link\" href=\"/users/sign_up\">Register now</a>"
 
-type GitlabFilter struct{}
+type FilterStep struct{}
 
-func (g GitlabFilter) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
+func (g FilterStep) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
 	return db.SetGitlabProcessed(i.ID)
 }
 
-func (g GitlabFilter) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
+func (g FilterStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForGitlab()
 }
 
-func (g GitlabFilter) Process(instance *scanct.Instance) ([]scanct.GitLab, error) {
+func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
-	resp, err := client.Get(fmt.Sprintf("https://%s%s", instance.Name, GitlabMagicURL))
+	resp, err := client.Get(fmt.Sprintf("https://%s%s", instance.Name, SignInURL))
 	if err != nil {
 		return nil, errors.Wrap(err, "error requesting instance")
 	} else if resp.StatusCode != 200 {
@@ -40,10 +40,10 @@ func (g GitlabFilter) Process(instance *scanct.Instance) ([]scanct.GitLab, error
 			return nil, err
 		}
 		bodyStr := string(body)
-		if strings.Contains(bodyStr, GitlabMagicString) {
+		if strings.Contains(bodyStr, SignInMagicString) {
 			return []scanct.GitLab{{
 				InstanceID:  instance.ID,
-				AllowSignup: strings.Contains(bodyStr, GitlabRegisterMagicString),
+				AllowSignup: strings.Contains(bodyStr, RegisterMagicString),
 				Email:       "",
 				Password:    "",
 				APIToken:    "",
@@ -55,7 +55,7 @@ func (g GitlabFilter) Process(instance *scanct.Instance) ([]scanct.GitLab, error
 	return nil, errors.New("no instance found: no magic string")
 }
 
-func (g GitlabFilter) SaveResult(db *scanct.Database, result []scanct.GitLab) error {
+func (g FilterStep) SaveResult(db *scanct.Database, result []scanct.GitLab) error {
 	for _, r := range result {
 		err := db.AddGitLab(r)
 		if err != nil {
@@ -66,5 +66,5 @@ func (g GitlabFilter) SaveResult(db *scanct.Database, result []scanct.GitLab) er
 }
 
 func FilterInstances() {
-	scanct.RunProcessStep[scanct.Instance, scanct.GitLab](GitlabFilter{}, 5)
+	scanct.RunProcessStep[scanct.Instance, scanct.GitLab](FilterStep{}, 5)
 }

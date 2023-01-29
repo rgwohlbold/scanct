@@ -11,17 +11,17 @@ import (
 
 const JenkinsMagicURL = "/api/json"
 
-type JenkinsFilter struct{}
+type FilterStep struct{}
 
-func (g JenkinsFilter) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
+func (g FilterStep) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
 	return db.SetInstanceProcessed(i.ID)
 }
 
-func (g JenkinsFilter) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
+func (g FilterStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForJenkins()
 }
 
-func (g JenkinsFilter) Process(instance *scanct.Instance) ([]scanct.Jenkins, error) {
+func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.Jenkins, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -59,10 +59,10 @@ func (g JenkinsFilter) Process(instance *scanct.Instance) ([]scanct.Jenkins, err
 	return nil, nil
 }
 
-func (g JenkinsFilter) SaveResult(db *scanct.Database, result []scanct.Jenkins) error {
+func (g FilterStep) SaveResult(db *scanct.Database, result []scanct.Jenkins) error {
 	return db.AddJenkins(result)
 }
 
 func FilterInstances() {
-	scanct.RunProcessStep[scanct.Instance, scanct.Jenkins](JenkinsFilter{}, 5)
+	scanct.RunProcessStep[scanct.Instance, scanct.Jenkins](FilterStep{}, 5)
 }

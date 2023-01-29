@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-type JenkinsSecretsFinder struct{}
+type SecretsStep struct{}
 
-func (f JenkinsSecretsFinder) UnprocessedInputs(db *scanct.Database) ([]scanct.JenkinsJob, error) {
+func (f SecretsStep) UnprocessedInputs(db *scanct.Database) ([]scanct.JenkinsJob, error) {
 	return db.GetUnprocessedJenkinsJobs()
 }
 
-func (_ JenkinsSecretsFinder) Process(job *scanct.JenkinsJob) ([]scanct.JenkinsFinding, error) {
+func (_ SecretsStep) Process(job *scanct.JenkinsJob) ([]scanct.JenkinsFinding, error) {
 	log.Info().Str("job", job.URL).Msg("processing job")
 	httpClient := http.Client{
 		Timeout: 30 * time.Second,
@@ -87,14 +87,14 @@ func (_ JenkinsSecretsFinder) Process(job *scanct.JenkinsJob) ([]scanct.JenkinsF
 	return secrets, nil
 }
 
-func (_ JenkinsSecretsFinder) SaveResult(db *scanct.Database, findings []scanct.JenkinsFinding) error {
+func (_ SecretsStep) SaveResult(db *scanct.Database, findings []scanct.JenkinsFinding) error {
 	return db.SaveJenkinsFindings(findings)
 }
 
-func (_ JenkinsSecretsFinder) SetProcessed(db *scanct.Database, job *scanct.JenkinsJob) error {
+func (_ SecretsStep) SetProcessed(db *scanct.Database, job *scanct.JenkinsJob) error {
 	return db.SetJenkinsJobProcessed(job)
 }
 
 func ScanSecrets() {
-	scanct.RunProcessStep[scanct.JenkinsJob, scanct.JenkinsFinding](JenkinsSecretsFinder{}, 5)
+	scanct.RunProcessStep[scanct.JenkinsJob, scanct.JenkinsFinding](SecretsStep{}, 5)
 }

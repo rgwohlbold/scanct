@@ -10,22 +10,22 @@ import (
 	"time"
 )
 
-type JenkinsJobsApiResponse struct {
-	Jobs []JenkinsJobsApiResponseJob `json:"jobs"`
+type JobsApiResponse struct {
+	Jobs []JobsApiResponseJob `json:"jobs"`
 }
 
-type JenkinsJobsApiResponseJob struct {
+type JobsApiResponseJob struct {
 	URL  string `json:"url"`
 	Name string `json:"name"`
 }
 
-type JenkinsProcessor struct{}
+type JobStep struct{}
 
-func (j JenkinsProcessor) UnprocessedInputs(db *scanct.Database) ([]scanct.Jenkins, error) {
+func (j JobStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Jenkins, error) {
 	return db.GetUnprocessedJenkins()
 }
 
-func (j JenkinsProcessor) Process(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob, error) {
+func (j JobStep) Process(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob, error) {
 	log.Info().Str("jenkins", jenkins.BaseURL).Msg("processing jenkins")
 	httpClient := http.Client{
 		Timeout: 5 * time.Second,
@@ -42,7 +42,7 @@ func (j JenkinsProcessor) Process(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob,
 	if err != nil {
 		return nil, err
 	}
-	var jobs JenkinsJobsApiResponse
+	var jobs JobsApiResponse
 	err = json.Unmarshal(body, &jobs)
 	if err != nil {
 		return nil, err
@@ -58,14 +58,14 @@ func (j JenkinsProcessor) Process(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob,
 	return result, nil
 }
 
-func (j JenkinsProcessor) SetProcessed(db *scanct.Database, i *scanct.Jenkins) error {
+func (j JobStep) SetProcessed(db *scanct.Database, i *scanct.Jenkins) error {
 	return db.SetJenkinsProcessed(i.ID)
 }
 
-func (j JenkinsProcessor) SaveResult(db *scanct.Database, o []scanct.JenkinsJob) error {
+func (j JobStep) SaveResult(db *scanct.Database, o []scanct.JenkinsJob) error {
 	return db.AddJenkinsJob(o)
 }
 
 func ImportJobs() {
-	scanct.RunProcessStep[scanct.Jenkins, scanct.JenkinsJob](JenkinsProcessor{}, 5)
+	scanct.RunProcessStep[scanct.Jenkins, scanct.JenkinsJob](JobStep{}, 5)
 }
