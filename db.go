@@ -85,6 +85,7 @@ type Finding struct {
 	URL          string
 	CommitDate   string
 	Rule         string
+	Processed    bool
 }
 
 type JenkinsFinding struct {
@@ -97,6 +98,18 @@ type JenkinsFinding struct {
 	File      string
 	URL       string
 	Rule      string
+	Processed bool
+}
+
+type AWSKey struct {
+	ID               int
+	AccessKey        string `gorm:"uniqueIndex:accesskey"`
+	SecretKey        string
+	FindingID        int
+	Finding          Finding `gorm:"foreignKey:FindingID"`
+	JenkinsFindingID int
+	JenkinsFinding   JenkinsFinding `gorm:"foreignKey:JenkinsFindingID"`
+	Arn              string
 }
 
 const DatabaseFile = "./instances.db"
@@ -120,7 +133,7 @@ func NewDatabase() (Database, error) {
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open database")
 	}
-	err = db.AutoMigrate(&Instance{}, &GitLab{}, &Jenkins{}, &JenkinsJob{}, &Repository{}, &Finding{}, &JenkinsFinding{})
+	err = db.AutoMigrate(&Instance{}, &GitLab{}, &Jenkins{}, &JenkinsJob{}, &Repository{}, &Finding{}, &JenkinsFinding{}, &AWSKey{})
 	if err != nil {
 		return Database{}, errors.Wrap(err, "could not open migrate instance")
 	}
@@ -151,16 +164,16 @@ func (d *Database) IndexRange() (int64, int64, error) {
 		return math.MaxInt64 / 2, math.MaxInt64 / 2, nil
 	}
 
-	type MaxMinRes struct {
-		M1 int64
-		M2 int64
-	}
-	var res MaxMinRes
-	err = d.db.Raw("select max(\"index\") as m1, min(\"index\") as m2 from instances").Scan(&res).Error
+	var minIndex, maxIndex int64
+	err = d.db.Raw("select max(\"index\") from instances").Scan(&maxIndex).Error
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "could not get index range")
 	}
-	return res.M2, res.M1, nil
+	err = d.db.Raw("select min(\"index\") from instances").Scan(&minIndex).Error
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not get index range")
+	}
+	return minIndex, maxIndex, nil
 }
 
 func (d *Database) GetUnprocessedInstancesForGitlab() ([]Instance, error) {
@@ -266,7 +279,7 @@ func (d *Database) InsertProjects(gitlab *GitLab, projects []*gitlab.Project) er
 
 func (d *Database) GetUnprocessedJenkins() ([]Jenkins, error) {
 	var j []Jenkins
-	err := d.db.Where("processed = false").Where("base_url = 'https://jenkins.worqcompany.net'").Preload(clause.Associations).Find(&j).Error
+	err := d.db.Where("processed = false").Preload(clause.Associations).Find(&j).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get unprocessed jenkins")
 	}
@@ -304,6 +317,52 @@ func (g GitLab) URL() string {
 
 func (r *Repository) CloneURL() string {
 	return fmt.Sprintf("%s/%s", r.GitLab.BaseURL, r.Name)
+}
+
+func (d *Database) GetUnprocessedAWSFindings() ([]Finding, error) {
+	var findings []Finding
+	query := d.db.Where("processed = false")
+	query = query.Where("rule = 'aws-access-token'")
+	query = query.Where("file not like '%gltf'")
+	query = query.Where("file not like '%ipynb'")
+	query = query.Where("file not like '%json'")
+	query = query.Where("file not like '%UPID_sequences_human.json'")
+	query = query.Where("secret not like '%AAAAAA%'")
+	query = query.Where("start_line < 1000")
+	err := query.Preload("Repository").Preload("Repository.GitLab").Find(&findings).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get unprocessed aws keys")
+	}
+	return findings, nil
+}
+
+func (d *Database) GetUnprocessedJenkinsAWSFindings() ([]JenkinsFinding, error) {
+	var findings []JenkinsFinding
+	query := d.db.Where("processed = false")
+	query = query.Where("rule = 'aws-access-token'")
+	query = query.Where("file not like '%gltf'")
+	query = query.Where("file not like '%ipynb'")
+	query = query.Where("file not like '%json'")
+	query = query.Where("file not like '%UPID_sequences_human.json'")
+	query = query.Where("secret not like '%AAAAAA%'")
+	query = query.Where("start_line < 1000")
+	err := query.Preload("Job").Preload("Job.Jenkins").Find(&findings).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get unprocessed aws keys")
+	}
+	return findings, nil
+}
+
+func (d *Database) SetFindingProcessed(id int) error {
+	return d.db.Table("findings").Where("id = ?", id).Update("processed", true).Error
+}
+
+func (d *Database) AddAWSKeys(k []AWSKey) error {
+	return d.db.Clauses(clause.OnConflict{DoNothing: true}).Save(&k).Error
+}
+
+func (d *Database) SetJenkinsFindingProcessed(id int) error {
+	return d.db.Table("jenkins_findings").Where("id = ?", id).Update("processed", true).Error
 }
 
 //func (d *Database) AddGitlabIfNotExists(g *GitlabInstance) error {

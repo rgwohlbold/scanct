@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/rgwohlbold/scanct"
+	"github.com/rgwohlbold/scanct/aws"
 	"github.com/rgwohlbold/scanct/gitlab"
 	"github.com/rgwohlbold/scanct/jenkins"
 	"github.com/rs/zerolog"
@@ -45,6 +46,8 @@ func main() {
 			jenkins.ImportJobs()
 		} else if os.Args[2] == "secrets" {
 			jenkins.ScanSecrets()
+		} else if os.Args[2] == "aws" {
+			aws.RunJenkinsKeysStep()
 		} else {
 			log.Fatal().Msg("unknown action. choose either 'filter', 'jobs' or 'secrets'.")
 		}
@@ -58,9 +61,28 @@ func main() {
 			gitlab.ImportRepositories()
 		} else if os.Args[2] == "secrets" {
 			gitlab.ScanSecrets()
+		} else if os.Args[2] == "aws" {
+			aws.RunGitlabKeysStep()
 		} else {
 			log.Fatal().Msg("unknown action. choose either 'filter', 'repositories' or 'secrets'.")
 		}
+	} else if os.Args[1] == "full" {
+		config := scanct.CTConfig{URL: "https://oak.ct.letsencrypt.org/2023/", GetEntriesBatchSize: 256, GetEntriesRetries: 5, NumCerts: math.MaxInt64}
+		if len(os.Args) >= 3 {
+			config.NumCerts, err = strconv.ParseInt(os.Args[2], 10, 64)
+			if err != nil {
+				log.Fatal().Err(err).Msg("could not parse number of certs")
+			}
+		}
+		scanct.ImportCertificates(&config)
+		gitlab.FilterInstances()
+		jenkins.FilterInstances()
+		gitlab.ImportRepositories()
+		jenkins.ImportJobs()
+		gitlab.ScanSecrets()
+		jenkins.ScanSecrets()
+		aws.RunGitlabKeysStep()
+		aws.RunJenkinsKeysStep()
 	} else {
 		log.Fatal().Msg("unknown subcommand. choose either 'ct', 'jenkins', 'gitlab'.")
 	}
