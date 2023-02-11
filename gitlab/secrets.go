@@ -9,16 +9,16 @@ import (
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"time"
 )
 
 type SecretsStep struct{}
 
-func CloneRepository(r *scanct.Repository, dir string) (*git.Repository, error) {
+func CloneRepository(r *scanct.Repository) (*git.Repository, error) {
 	localCtx, cancel := context.WithTimeout(context.Background(), CloneRepositoryTimeout)
 	defer cancel()
 
@@ -33,38 +33,51 @@ func CloneRepository(r *scanct.Repository, dir string) (*git.Repository, error) 
 		opts.Auth = &http.BasicAuth{Username: "git", Password: r.GitLab.APIToken}
 	}
 
-	repository, err := git.PlainCloneContext(localCtx, dir, false, opts)
-
+	repository, err := git.CloneContext(localCtx, memory.NewStorage(), nil, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to clone repository")
 	}
-
 	return repository, nil
 }
 
-func FindingsForRepository(dir string) ([]report.Finding, error) {
+func FindingsForRepository(repository *git.Repository) ([]report.Finding, error) {
 	detector, err := detect.NewDetectorDefaultConfig()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create detector")
 	}
-	findings, err := detector.DetectGit(dir, "", detect.DetectType)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to detect findings")
-	}
-	_findings := make([]report.Finding, 0, len(findings))
-	for _, finding := range findings {
-		found := false
-		for _, f := range _findings {
-			if f.Secret == finding.Secret {
-				found = true
-				break
+	it, err := repository.Log(&git.LogOptions{
+		All: true,
+	})
+	secretsMap := make(map[string]struct{})
+	var findings []report.Finding
+	err = it.ForEach(func(c *object.Commit) error {
+		var fileIt *object.FileIter
+		fileIt, err = c.Files()
+		if err != nil {
+			return err
+		}
+		return fileIt.ForEach(func(file *object.File) error {
+			var contents string
+			contents, err = file.Contents()
+			if err != nil {
+				return err
 			}
-		}
-		if !found {
-			_findings = append(_findings, finding)
-		}
-	}
-	return _findings, nil
+			for _, finding := range detector.Detect(detect.Fragment{
+				Raw:       contents,
+				FilePath:  file.Name,
+				CommitSHA: c.Hash.String(),
+			}) {
+				if _, ok := secretsMap[finding.Secret]; !ok {
+					secretsMap[finding.Secret] = struct{}{}
+					finding.Commit = c.Hash.String()
+					finding.Date = c.Author.When.Format("2006-01-02")
+					findings = append(findings, finding)
+				}
+			}
+			return nil
+		})
+	})
+	return findings, err
 }
 
 func (s SecretsStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Repository, error) {
@@ -80,33 +93,21 @@ func (s SecretsStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Repository
 
 func (s SecretsStep) Process(repository *scanct.Repository) ([]scanct.Finding, error) {
 	url := fmt.Sprintf("%s/%s", repository.GitLab.BaseURL, repository.Name)
-	log.Debug().Str("repository", url).Msg("processing repository")
-
-	dir := filepath.Join("/tmp", scanct.Hash(url))
-	res, err := os.Stat(dir)
-	if err != nil && !os.IsNotExist(err) {
-		log.Fatal().Err(err).Msg("could not stat clone dir")
-	} else if err == nil && res.IsDir() {
-		err = os.RemoveAll(dir)
-		if err != nil {
-			log.Fatal().Err(err).Msg("could not remove existing clone dir")
-		}
-	}
-	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
-	_, err = CloneRepository(repository, dir)
-	defer os.RemoveAll(dir)
+	log.Debug().Str("repository", url).Msg("cloning repository")
+	r, err := CloneRepository(repository)
 
 	if err != nil {
 		return nil, errors.Wrap(err, "could not clone repository")
 	}
-
+	log.Debug().Str("repository", url).Msg("processing repository")
 	var findings []report.Finding
-	findings, err = FindingsForRepository(dir)
+	findings, err = FindingsForRepository(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get findings")
 	}
+	log.Debug().Str("repository", url).Int("findings", len(findings)).Msg("done processing")
 
-	dbFindings := make([]scanct.Finding, len(findings))
+	dbFindings := make([]scanct.Finding, 0, len(findings))
 	for _, f := range findings {
 		if len(f.Secret) > 50 {
 			f.Secret = fmt.Sprint(f.Secret[:50], "...")
@@ -127,7 +128,7 @@ func (s SecretsStep) Process(repository *scanct.Repository) ([]scanct.Finding, e
 }
 
 func (s SecretsStep) SetProcessed(db *scanct.Database, repository *scanct.Repository) error {
-	return db.SetRepositoryProcessed(repository.ID)
+	return db.SetRepositoryProcessed(repository)
 }
 
 func (s SecretsStep) SaveResult(db *scanct.Database, findings []scanct.Finding) error {

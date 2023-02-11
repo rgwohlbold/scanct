@@ -59,7 +59,7 @@ func (j JobStep) Process(jenkins *scanct.Jenkins) ([]scanct.JenkinsJob, error) {
 }
 
 func (j JobStep) SetProcessed(db *scanct.Database, i *scanct.Jenkins) error {
-	return db.SetJenkinsProcessed(i.ID)
+	return db.SetJenkinsProcessed(i)
 }
 
 func (j JobStep) SaveResult(db *scanct.Database, o []scanct.JenkinsJob) error {

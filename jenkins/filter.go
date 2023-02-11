@@ -14,7 +14,7 @@ const JenkinsMagicURL = "/api/json"
 type FilterStep struct{}
 
 func (g FilterStep) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
-	return db.SetInstanceProcessed(i.ID)
+	return db.SetInstanceProcessed(i)
 }
 
 func (g FilterStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {

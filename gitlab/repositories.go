@@ -3,6 +3,7 @@ package gitlab
 import (
 	"github.com/pkg/errors"
 	"github.com/rgwohlbold/scanct"
+	"github.com/rs/zerolog/log"
 	"github.com/xanzy/go-gitlab"
 )
 
@@ -43,11 +44,12 @@ func (r RepositoryStep) Process(gl *scanct.GitLab) ([]scanct.Repository, error) 
 			})
 		}
 	}
+	log.Info().Int("repositories", len(repositories)).Str("gitlab", gl.BaseURL).Msg("found repositories")
 	return repositories, nil
 }
 
 func (r RepositoryStep) SetProcessed(db *scanct.Database, i *scanct.GitLab) error {
-	return db.SetGitlabProcessed(i.ID)
+	return db.SetGitlabProcessed(i)
 }
 
 func (r RepositoryStep) SaveResult(db *scanct.Database, repos []scanct.Repository) error {
@@ -55,5 +57,5 @@ func (r RepositoryStep) SaveResult(db *scanct.Database, repos []scanct.Repositor
 }
 
 func ImportRepositories() {
-	scanct.RunProcessStep[scanct.GitLab, scanct.Repository](RepositoryStep{}, 5)
+	scanct.RunProcessStep[scanct.GitLab, scanct.Repository](RepositoryStep{}, 50)
 }

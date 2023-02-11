@@ -12,7 +12,7 @@ import (
 type GitlabStep struct{}
 
 func (g GitlabStep) SetProcessed(db *scanct.Database, f *scanct.Finding) error {
-	return db.SetFindingProcessed(f.ID)
+	return db.SetFindingProcessed(f)
 }
 
 func (g GitlabStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Finding, error) {

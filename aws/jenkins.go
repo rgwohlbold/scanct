@@ -12,7 +12,7 @@ import (
 type JenkinsStep struct{}
 
 func (g JenkinsStep) SetProcessed(db *scanct.Database, f *scanct.JenkinsFinding) error {
-	return db.SetJenkinsFindingProcessed(f.ID)
+	return db.SetJenkinsFindingProcessed(f)
 }
 
 func (g JenkinsStep) UnprocessedInputs(db *scanct.Database) ([]scanct.JenkinsFinding, error) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/rgwohlbold/scanct"
+	"github.com/rs/zerolog/log"
 	"io"
 	"net/http"
 	"strings"
@@ -17,7 +18,7 @@ const RegisterMagicString = "<a data-qa-selector=\"register_link\" href=\"/users
 type FilterStep struct{}
 
 func (g FilterStep) SetProcessed(db *scanct.Database, i *scanct.Instance) error {
-	return db.SetGitlabProcessed(i.ID)
+	return db.SetInstanceProcessed(i)
 }
 
 func (g FilterStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
@@ -30,9 +31,19 @@ func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) 
 	}
 	resp, err := client.Get(fmt.Sprintf("https://%s%s", instance.Name, SignInURL))
 	if err != nil {
+		if strings.Contains(err.Error(), "server gave HTTP response to HTTPS client") {
+			return nil, nil
+		} else if strings.Contains(err.Error(), "tls: failed to verify certificate: x509:") {
+			return nil, nil
+		} else if strings.Contains(err.Error(), "no such host") {
+			return nil, nil
+		} else if strings.Contains(err.Error(), "stopped after 10 redirects") {
+			return nil, nil
+
+		}
 		return nil, errors.Wrap(err, "error requesting instance")
 	} else if resp.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("no instance found: status %d", resp.StatusCode))
+		return nil, nil
 	} else {
 		var body []byte
 		body, err = io.ReadAll(resp.Body)
@@ -41,6 +52,7 @@ func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) 
 		}
 		bodyStr := string(body)
 		if strings.Contains(bodyStr, SignInMagicString) {
+			log.Info().Str("instance", instance.Name).Msg("found gitlab instance")
 			return []scanct.GitLab{{
 				InstanceID:  instance.ID,
 				AllowSignup: strings.Contains(bodyStr, RegisterMagicString),
@@ -52,7 +64,8 @@ func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) 
 			}}, nil
 		}
 	}
-	return nil, errors.New("no instance found: no magic string")
+	// no instance found
+	return nil, nil
 }
 
 func (g FilterStep) SaveResult(db *scanct.Database, result []scanct.GitLab) error {
@@ -66,5 +79,5 @@ func (g FilterStep) SaveResult(db *scanct.Database, result []scanct.GitLab) erro
 }
 
 func FilterInstances() {
-	scanct.RunProcessStep[scanct.Instance, scanct.GitLab](FilterStep{}, 5)
+	scanct.RunProcessStep[scanct.Instance, scanct.GitLab](FilterStep{}, 50)
 }

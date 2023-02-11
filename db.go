@@ -177,7 +177,7 @@ func (d *Database) IndexRange() (int64, int64, error) {
 
 func (d *Database) GetUnprocessedInstancesForGitlab() ([]Instance, error) {
 	var instances []Instance
-	err := d.db.Where("processed = false").Where("name between 'gitlab.' and 'gitlab./'").Where("name not like 'gitlab.git%'").Find(&instances).Error
+	err := d.db.Where("processed = false").Where("name between 'gitlab.' and 'gitlab/'").Where("name not like 'gitlab.git%'").Find(&instances).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get unprocessed instances")
 	}
@@ -216,16 +216,16 @@ func (d *Database) AddJenkins(j []Jenkins) error {
 	return d.db.Clauses(clause.OnConflict{DoNothing: true}).Create(j).Error
 }
 
-func (d *Database) SetGitlabProcessed(gitlabID int) error {
-	return d.db.Table("git_labs").Where("id = ?", gitlabID).Update("processed", true).Error
+func (d *Database) SetGitlabProcessed(gitlab *GitLab) error {
+	return d.db.Table("git_labs").Where("id = ?", gitlab.ID).Update("processed", true).Error
 }
 
-func (d *Database) SetInstanceProcessed(instanceID int) error {
-	return d.db.Table("instances").Where("id = ?", instanceID).Update("processed", true).Error
+func (d *Database) SetInstanceProcessed(instance *Instance) error {
+	return d.db.Table("instances").Where("id = ?", instance.ID).Update("processed", true).Error
 }
 
-func (d *Database) SetRepositoryProcessed(repositoryID int) error {
-	return d.db.Table("repositories").Where("id = ?", repositoryID).Update("processed", true).Error
+func (d *Database) SetRepositoryProcessed(repository *Repository) error {
+	return d.db.Table("repositories").Where("id = ?", repository.ID).Update("processed", true).Error
 }
 
 func (d *Database) StoreCertificates(certs []Certificate) error {
@@ -268,8 +268,8 @@ func (d *Database) GetUnprocessedJenkins() ([]Jenkins, error) {
 	return j, nil
 }
 
-func (d *Database) SetJenkinsProcessed(id int) error {
-	return d.db.Table("jenkins").Where("id = ?", id).Update("processed", true).Error
+func (d *Database) SetJenkinsProcessed(jenkins *Jenkins) error {
+	return d.db.Table("jenkins").Where("id = ?", jenkins.ID).Update("processed", true).Error
 }
 
 func (d *Database) AddJenkinsJob(o []JenkinsJob) error {
@@ -335,16 +335,16 @@ func (d *Database) GetUnprocessedJenkinsAWSFindings() ([]JenkinsFinding, error) 
 	return findings, nil
 }
 
-func (d *Database) SetFindingProcessed(id int) error {
-	return d.db.Table("findings").Where("id = ?", id).Update("processed", true).Error
+func (d *Database) SetFindingProcessed(finding *Finding) error {
+	return d.db.Table("findings").Where("id = ?", finding.ID).Update("processed", true).Error
 }
 
 func (d *Database) AddAWSKeys(k []AWSKey) error {
 	return d.db.Clauses(clause.OnConflict{DoNothing: true}).Save(&k).Error
 }
 
-func (d *Database) SetJenkinsFindingProcessed(id int) error {
-	return d.db.Table("jenkins_findings").Where("id = ?", id).Update("processed", true).Error
+func (d *Database) SetJenkinsFindingProcessed(finding *JenkinsFinding) error {
+	return d.db.Table("jenkins_findings").Where("id = ?", finding.ID).Update("processed", true).Error
 }
 
 //func (d *Database) AddGitlabIfNotExists(g *GitlabInstance) error {
