@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-	"github.com/xanzy/go-gitlab"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,7 +21,7 @@ type Database struct {
 type Instance struct {
 	ID        int
 	Name      string `gorm:"index:index_name"`
-	Index     int64  `gorm:"index:index_index,unique"`
+	Index     int64  `gorm:"index:index_index"`
 	Processed bool
 }
 
@@ -243,12 +242,8 @@ func (d *Database) StoreCertificates(certs []Certificate) error {
 	return d.db.Create(&instances).Error
 }
 
-func (d *Database) LogFinding(finding *Finding) error {
-	err := d.db.Save(finding).Error
-	if err != nil {
-		return errors.Wrap(err, "could not insert finding")
-	}
-	return nil
+func (d *Database) LogFindings(finding []Finding) error {
+	return d.db.Save(&finding).Error
 }
 
 func (d *Database) GetUnprocessedGitLabs() ([]GitLab, error) {
@@ -260,21 +255,8 @@ func (d *Database) GetUnprocessedGitLabs() ([]GitLab, error) {
 	return gl, nil
 }
 
-func (d *Database) InsertProjects(gitlab *GitLab, projects []*gitlab.Project) error {
-	return d.db.Transaction(func(tx *gorm.DB) error {
-		for _, r := range projects {
-			repo := Repository{
-				GitLabID:  gitlab.ID,
-				Name:      r.PathWithNamespace,
-				Processed: false,
-			}
-			err := tx.Save(&repo).Error
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+func (d *Database) InsertRepositories(repositories []Repository) error {
+	return d.db.Save(&repositories).Error
 }
 
 func (d *Database) GetUnprocessedJenkins() ([]Jenkins, error) {

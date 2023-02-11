@@ -3,19 +3,26 @@ package gitlab
 import (
 	"github.com/pkg/errors"
 	"github.com/rgwohlbold/scanct"
-	"github.com/rs/zerolog/log"
 	"github.com/xanzy/go-gitlab"
 )
 
-func ProcessGitlab(db *scanct.Database, gl *scanct.GitLab) error {
+const MaxItemCountPerPage = 100 // 100 is the maximum defined by the GitLab API
+
+type RepositoryStep struct{}
+
+func (r RepositoryStep) UnprocessedInputs(db *scanct.Database) ([]scanct.GitLab, error) {
+	return db.GetUnprocessedGitLabs()
+}
+
+func (r RepositoryStep) Process(gl *scanct.GitLab) ([]scanct.Repository, error) {
 	client, err := gitlab.NewClient(gl.APIToken, gitlab.WithBaseURL(gl.URL()))
 	if err != nil {
-		return errors.Wrap(err, "could not create gitlab client")
+		return nil, errors.Wrap(err, "could not create gitlab client")
 	}
-	var projects []*gitlab.Project
 	var res *gitlab.Response
+	repositories := make([]scanct.Repository, 0)
 
-	for page := 1; page != 0; {
+	for page := 1; page != 0; page = res.NextPage {
 		options := &gitlab.ListProjectsOptions{
 			OrderBy: gitlab.String("name"),
 			ListOptions: gitlab.ListOptions{
@@ -23,36 +30,30 @@ func ProcessGitlab(db *scanct.Database, gl *scanct.GitLab) error {
 				PerPage: MaxItemCountPerPage,
 			}}
 
+		var projects []*gitlab.Project
 		projects, res, err = client.Projects.ListProjects(options, nil)
 		if err != nil {
-			return errors.Wrap(err, "failed to list")
+			return nil, errors.Wrap(err, "failed to list")
 		}
-		err = db.InsertProjects(gl, projects)
-		if err != nil {
-			return errors.Wrap(err, "failed to insert projects")
+		for _, project := range projects {
+			repositories = append(repositories, scanct.Repository{
+				GitLabID:  gl.ID,
+				Name:      project.PathWithNamespace,
+				Processed: false,
+			})
 		}
-		page = res.NextPage
 	}
-	return db.SetGitlabProcessed(gl.ID)
+	return repositories, nil
+}
+
+func (r RepositoryStep) SetProcessed(db *scanct.Database, i *scanct.GitLab) error {
+	return db.SetGitlabProcessed(i.ID)
+}
+
+func (r RepositoryStep) SaveResult(db *scanct.Database, repos []scanct.Repository) error {
+	return db.InsertRepositories(repos)
 }
 
 func ImportRepositories() {
-	db, err := scanct.NewDatabase()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not open database")
-	}
-	defer db.Close()
-
-	gitlabs, err := db.GetUnprocessedGitLabs()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not get gitlabs")
-	}
-
-	for _, gl := range gitlabs {
-		log.Debug().Str("gitlab", gl.URL()).Msg("processing gitlab")
-		err = ProcessGitlab(&db, &gl)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to process gitlab")
-		}
-	}
+	scanct.RunProcessStep[scanct.GitLab, scanct.Repository](RepositoryStep{}, 5)
 }

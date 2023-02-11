@@ -80,24 +80,29 @@ func CTProcessWorker(config *CTConfig, startChan <-chan int64, certChan chan<- [
 		certs := make([]Certificate, len(entries))
 		for i, entry := range entries {
 			certs[i] = Certificate{Index: entry.Index, Subjects: make([]string, 0)}
-			cert, err := entry.Leaf.X509Certificate()
-			if err != nil {
-				log.Fatal().Err(err)
+			if entry.Leaf.LeafType != ct.TimestampedEntryLeafType {
+				log.Fatal().Msg("not a timestamped entry")
 			}
-			if cert != nil {
-				certs[i].Subjects = append(certs[i].Subjects, cert.Subject.CommonName)
-				for _, name := range cert.Subject.ExtraNames {
-					certs[i].Subjects = append(certs[i].Subjects, name.Value.(string))
+			if entry.Leaf.TimestampedEntry.EntryType == ct.X509LogEntryType {
+				cert, err := entry.Leaf.X509Certificate()
+				if err != nil {
+					log.Fatal().Err(err).Msg("could not parse certificate")
 				}
-			} else {
+				certs[i].Subjects = append(certs[i].Subjects, cert.Subject.CommonName)
+				for _, name := range cert.DNSNames {
+					certs[i].Subjects = append(certs[i].Subjects, name)
+				}
+			} else if entry.Leaf.TimestampedEntry.EntryType == ct.PrecertLogEntryType {
 				precert, err := entry.Leaf.Precertificate()
 				if err != nil {
 					log.Fatal().Err(err)
 				}
 				certs[i].Subjects = append(certs[i].Subjects, precert.Subject.CommonName)
-				for _, name := range precert.Subject.ExtraNames {
-					certs[i].Subjects = append(certs[i].Subjects, name.Value.(string))
+				for _, name := range precert.DNSNames {
+					certs[i].Subjects = append(certs[i].Subjects, name)
 				}
+			} else {
+				log.Fatal().Uint64("type", uint64(entry.Leaf.TimestampedEntry.EntryType)).Msg("unknown entry type")
 			}
 			certs[i].Subjects = Unique(certs[i].Subjects)
 		}

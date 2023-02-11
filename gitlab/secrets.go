@@ -2,7 +2,6 @@ package gitlab
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/rgwohlbold/scanct"
@@ -14,11 +13,10 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
-const MaxItemCountPerPage = 100 // 100 is the maximum defined by the GitLab API
+type SecretsStep struct{}
 
 func CloneRepository(r *scanct.Repository, dir string) (*git.Repository, error) {
 	localCtx, cancel := context.WithTimeout(context.Background(), CloneRepositoryTimeout)
@@ -42,24 +40,6 @@ func CloneRepository(r *scanct.Repository, dir string) (*git.Repository, error) 
 	}
 
 	return repository, nil
-}
-
-func RepositoryInputWorker(inputChan chan<- scanct.Repository) {
-	defer close(inputChan)
-
-	db, err := scanct.NewDatabase()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not create database")
-	}
-	defer db.Close()
-
-	repositories, err := db.GetUnprocessedRepositories()
-	rand.Shuffle(len(repositories), func(i, j int) {
-		repositories[i], repositories[j] = repositories[j], repositories[i]
-	})
-	for _, repository := range repositories {
-		inputChan <- repository
-	}
 }
 
 func FindingsForRepository(dir string) ([]report.Finding, error) {
@@ -87,118 +67,76 @@ func FindingsForRepository(dir string) ([]report.Finding, error) {
 	return _findings, nil
 }
 
-func RepositoryProcessWorker(inputChan <-chan scanct.Repository, outputChan chan<- scanct.Finding) {
-	db, err := scanct.NewDatabase()
+func (s SecretsStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Repository, error) {
+	repositories, err := db.GetUnprocessedRepositories()
 	if err != nil {
-		log.Fatal().Err(err).Msg("could not create database")
+		return nil, err
 	}
-	defer db.Close()
+	rand.Shuffle(len(repositories), func(i, j int) {
+		repositories[i], repositories[j] = repositories[j], repositories[i]
+	})
+	return repositories, nil
+}
 
-	for {
-		repository, ok := <-inputChan
-		if !ok {
-			return
-		}
-		url := fmt.Sprintf("%s/%s", repository.GitLab.BaseURL, repository.Name)
-		log.Debug().Str("repository", url).Msg("processing repository")
+func (s SecretsStep) Process(repository *scanct.Repository) ([]scanct.Finding, error) {
+	url := fmt.Sprintf("%s/%s", repository.GitLab.BaseURL, repository.Name)
+	log.Debug().Str("repository", url).Msg("processing repository")
 
-		dir := filepath.Join("/tmp", scanct.Hash(url))
-		var res os.FileInfo
-		res, err = os.Stat(dir)
-		if err != nil && !os.IsNotExist(err) {
-			log.Fatal().Err(err).Msg("could not stat clone dir")
-		} else if err == nil && res.IsDir() {
-			err = os.RemoveAll(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg("could not remove existing clone dir")
-			}
-		}
-		log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
-		_, err = CloneRepository(&repository, dir)
-
-		if err != nil {
-			log.Warn().Str("repository", url).Err(err).Msg("failed to clone repository")
-			if strings.Contains(err.Error(), "remote repository is empty") {
-				err = db.SetRepositoryProcessed(repository.ID)
-				if err != nil {
-					log.Fatal().Err(err).Msg("could not set repository processed")
-				}
-			}
-			_ = os.RemoveAll(dir)
-			continue
-		}
-
-		var findings []report.Finding
-		findings, err = FindingsForRepository(dir)
-		if err != nil {
-			log.Error().Err(err).Str("repository", url).Msg("could not get findings")
-		} else {
-			for _, f := range findings {
-				if len(f.Secret) > 50 {
-					f.Secret = fmt.Sprint(f.Secret[:50], "...")
-				}
-				outputChan <- scanct.Finding{
-					Repository: repository,
-					Secret:     f.Secret,
-					Commit:     f.Commit,
-					StartLine:  f.StartLine,
-					EndLine:    f.EndLine,
-					File:       f.File,
-					URL:        fmt.Sprintf("%s/blob/%s/%s#L%d-%d", repository.CloneURL(), f.Commit, f.File, f.StartLine, f.EndLine),
-					Rule:       f.RuleID,
-					CommitDate: f.Date,
-				}
-			}
-			err = db.SetRepositoryProcessed(repository.ID)
-			if err != nil {
-				log.Fatal().Err(err).Msg("could not set repository processed")
-			}
-		}
+	dir := filepath.Join("/tmp", scanct.Hash(url))
+	res, err := os.Stat(dir)
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal().Err(err).Msg("could not stat clone dir")
+	} else if err == nil && res.IsDir() {
 		err = os.RemoveAll(dir)
 		if err != nil {
-			log.Fatal().Err(err).Msg("could not remove clone dir")
+			log.Fatal().Err(err).Msg("could not remove existing clone dir")
 		}
 	}
-}
+	log.Debug().Str("repository", url).Str("temp_directory", dir).Msg("cloning repository")
+	_, err = CloneRepository(repository, dir)
+	defer os.RemoveAll(dir)
 
-func RepositoryOutputWorker(outputChan <-chan scanct.Finding) {
-	db, err := scanct.NewDatabase()
 	if err != nil {
-		log.Fatal().Err(err).Msg("could not create database")
+		return nil, errors.Wrap(err, "could not clone repository")
 	}
-	defer db.Close()
-	for {
-		finding, ok := <-outputChan
-		if !ok {
-			return
-		}
-		err = db.LogFinding(&finding)
-		if err != nil {
-			log.Fatal().Err(err).Msg("could not insert finding into database")
-		}
+
+	var findings []report.Finding
+	findings, err = FindingsForRepository(dir)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get findings")
 	}
+
+	dbFindings := make([]scanct.Finding, len(findings))
+	for _, f := range findings {
+		if len(f.Secret) > 50 {
+			f.Secret = fmt.Sprint(f.Secret[:50], "...")
+		}
+		dbFindings = append(dbFindings, scanct.Finding{
+			RepositoryID: repository.ID,
+			Secret:       f.Secret,
+			Commit:       f.Commit,
+			StartLine:    f.StartLine,
+			EndLine:      f.EndLine,
+			File:         f.File,
+			URL:          fmt.Sprintf("%s/blob/%s/%s#L%d-%d", repository.CloneURL(), f.Commit, f.File, f.StartLine, f.EndLine),
+			Rule:         f.RuleID,
+			CommitDate:   f.Date,
+		})
+	}
+	return dbFindings, nil
 }
 
-const RepositoryProcessWorkers = 5
+func (s SecretsStep) SetProcessed(db *scanct.Database, repository *scanct.Repository) error {
+	return db.SetRepositoryProcessed(repository.ID)
+}
+
+func (s SecretsStep) SaveResult(db *scanct.Database, findings []scanct.Finding) error {
+	return db.LogFindings(findings)
+}
+
+const SecretProcessWorkers = 5
 const CloneRepositoryTimeout = 60 * time.Second
 
 func ScanSecrets() {
-	secretsCmd := flag.NewFlagSet("secrets", flag.ExitOnError)
-
-	instanceFlag := secretsCmd.String("instance", "", "GitLab instance to scan")
-	//tokenFlag := secretsCmd.String("token", "", "API token")
-	err := secretsCmd.Parse(os.Args[2:])
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not parse secrets command")
-	}
-	if *instanceFlag == "" {
-		scanct.Fan[scanct.Repository, scanct.Finding]{
-			InputWorker:   RepositoryInputWorker,
-			ProcessWorker: RepositoryProcessWorker,
-			OutputWorker:  RepositoryOutputWorker,
-			Workers:       RepositoryProcessWorkers,
-			InputBuffer:   100,
-			OutputBuffer:  100,
-		}.Run()
-	}
+	scanct.RunProcessStep[scanct.Repository, scanct.Finding](SecretsStep{}, SecretProcessWorkers)
 }
