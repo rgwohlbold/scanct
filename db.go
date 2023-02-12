@@ -202,14 +202,8 @@ func (d *Database) GetUnprocessedRepositories() ([]Repository, error) {
 	return repos, nil
 }
 
-func (d *Database) AddGitLab(g GitLab) error {
-	return d.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&g).Error
-		if err != nil {
-			return err
-		}
-		return tx.Where("id = ?", g.InstanceID).Set("processed", true).Error
-	})
+func (d *Database) AddGitLab(g []GitLab) error {
+	return d.db.Clauses(clause.OnConflict{DoNothing: true}).Save(g).Error
 }
 
 func (d *Database) AddJenkins(j []Jenkins) error {
@@ -256,7 +250,15 @@ func (d *Database) GetUnprocessedGitLabs() ([]GitLab, error) {
 }
 
 func (d *Database) InsertRepositories(repositories []Repository) error {
-	return d.db.Save(&repositories).Error
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		for _, repo := range repositories {
+			err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&repo).Error
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (d *Database) GetUnprocessedJenkins() ([]Jenkins, error) {

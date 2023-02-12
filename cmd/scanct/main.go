@@ -13,6 +13,17 @@ import (
 	"strconv"
 )
 
+func FullProcess() {
+	gitlab.FilterInstances()
+	jenkins.FilterInstances()
+	gitlab.ImportRepositories()
+	jenkins.ImportJobs()
+	gitlab.ScanSecrets()
+	jenkins.ScanSecrets()
+	aws.RunGitlabKeysStep()
+	aws.RunJenkinsKeysStep()
+}
+
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
@@ -73,16 +84,15 @@ func main() {
 			if err != nil {
 				log.Fatal().Err(err).Msg("could not parse number of certs")
 			}
+			scanct.ImportCertificates(&config)
+			FullProcess()
+		} else {
+			for {
+				FullProcess()
+				config.NumCerts = 1000000
+				scanct.ImportCertificates(&config)
+			}
 		}
-		scanct.ImportCertificates(&config)
-		gitlab.FilterInstances()
-		jenkins.FilterInstances()
-		gitlab.ImportRepositories()
-		jenkins.ImportJobs()
-		gitlab.ScanSecrets()
-		jenkins.ScanSecrets()
-		aws.RunGitlabKeysStep()
-		aws.RunJenkinsKeysStep()
 	} else {
 		log.Fatal().Msg("unknown subcommand. choose either 'ct', 'jenkins', 'gitlab'.")
 	}

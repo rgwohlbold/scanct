@@ -13,6 +13,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"math/rand"
+	"runtime"
 	"time"
 )
 
@@ -135,9 +136,8 @@ func (s SecretsStep) SaveResult(db *scanct.Database, findings []scanct.Finding) 
 	return db.LogFindings(findings)
 }
 
-const SecretProcessWorkers = 5
 const CloneRepositoryTimeout = 60 * time.Second
 
 func ScanSecrets() {
-	scanct.RunProcessStep[scanct.Repository, scanct.Finding](SecretsStep{}, SecretProcessWorkers)
+	scanct.RunProcessStep[scanct.Repository, scanct.Finding](SecretsStep{}, runtime.NumCPU())
 }

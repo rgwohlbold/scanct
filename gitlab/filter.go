@@ -1,12 +1,18 @@
 package gitlab
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/rgwohlbold/scanct"
 	"github.com/rs/zerolog/log"
+	"github.com/xanzy/go-gitlab"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -23,6 +29,80 @@ func (g FilterStep) SetProcessed(db *scanct.Database, i *scanct.Instance) error 
 
 func (g FilterStep) UnprocessedInputs(db *scanct.Database) ([]scanct.Instance, error) {
 	return db.GetUnprocessedInstancesForGitlab()
+}
+
+const DoRegister = false
+const RegisterEmail = "scanct-testing2@rgwohlbold.de"
+const RegisterUsername = "scanct-testing2"
+
+func Signup(httpClient *http.Client, gl *scanct.GitLab) error {
+	r := regexp.MustCompile("name=\"authenticity_token\" value=\"([^\"]+)\"")
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return err
+	}
+	httpClient.Jar = jar
+	resp, err := httpClient.Get(fmt.Sprintf("%s/users/sign_up", gl.BaseURL))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 200 {
+		return errors.New(fmt.Sprintf("bad status code %d", resp.StatusCode))
+	}
+	var body []byte
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	bodyStr := string(body)
+	submatches := r.FindStringSubmatch(bodyStr)
+	if len(submatches) != 2 {
+		return errors.New("could not find authenticity token")
+	}
+	authToken := submatches[1]
+
+	b := make([]byte, 20)
+	_, err = rand.Read(b)
+	if err != nil {
+		return err
+	}
+	password := hex.EncodeToString(b)
+	values := url.Values{}
+	values.Add("new_user[first_name]", RegisterUsername)
+	values.Add("new_user[last_name]", RegisterUsername)
+	values.Add("new_user[username]", RegisterUsername)
+	values.Add("new_user[email]", RegisterEmail)
+	values.Add("new_user[password]", password)
+	values.Add("authenticity_token", authToken)
+
+	resp, err = httpClient.Post(fmt.Sprintf("%s/users", gl.BaseURL), "application/x-www-form-urlencoded", strings.NewReader(values.Encode()))
+	if err != nil {
+		return err
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(body))
+	if resp.StatusCode != 200 {
+		return errors.New(fmt.Sprintf("bad status code %d", resp.StatusCode))
+	} else if strings.Contains(string(body), "prohibited this user from being saved") {
+		return errors.New("could not create user")
+	} else if strings.Contains(string(body), "However, we could not sign you in because your account is awaiting approval from your GitLab administrator.") {
+		return errors.New("awaiting approval from admin")
+	}
+	client, err := gitlab.NewBasicAuthClient(RegisterUsername, password, gitlab.WithBaseURL(gl.URL()))
+	if err != nil {
+		return err
+	}
+	currentUser, _, err := client.Users.CurrentUser(nil)
+	if err != nil {
+		return err
+	}
+	fmt.Println(currentUser.Name)
+	gl.Email = RegisterEmail
+	gl.Password = password
+	return nil
 }
 
 func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) {
@@ -53,7 +133,7 @@ func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) 
 		bodyStr := string(body)
 		if strings.Contains(bodyStr, SignInMagicString) {
 			log.Info().Str("instance", instance.Name).Msg("found gitlab instance")
-			return []scanct.GitLab{{
+			gl := scanct.GitLab{
 				InstanceID:  instance.ID,
 				AllowSignup: strings.Contains(bodyStr, RegisterMagicString),
 				Email:       "",
@@ -61,7 +141,11 @@ func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) 
 				APIToken:    "",
 				Processed:   false,
 				BaseURL:     fmt.Sprintf("https://%s", instance.Name),
-			}}, nil
+			}
+			if gl.AllowSignup && DoRegister {
+				err = Signup(&client, &gl)
+			}
+			return []scanct.GitLab{gl}, nil
 		}
 	}
 	// no instance found
@@ -69,13 +153,7 @@ func (g FilterStep) Process(instance *scanct.Instance) ([]scanct.GitLab, error) 
 }
 
 func (g FilterStep) SaveResult(db *scanct.Database, result []scanct.GitLab) error {
-	for _, r := range result {
-		err := db.AddGitLab(r)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return db.AddGitLab(result)
 }
 
 func FilterInstances() {
