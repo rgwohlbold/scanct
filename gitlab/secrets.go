@@ -9,6 +9,7 @@ import (
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"github.com/zricethezav/gitleaks/v8/report"
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -16,6 +17,9 @@ import (
 	"runtime"
 	"time"
 )
+
+// MaxFileSize is 1 MiB
+const MaxFileSize = 1024 * 1024
 
 type SecretsStep struct{}
 
@@ -50,6 +54,7 @@ func FindingsForRepository(repository *git.Repository) ([]report.Finding, error)
 		All: true,
 	})
 	secretsMap := make(map[string]struct{})
+	fileMap := make(map[plumbing.Hash]struct{})
 	var findings []report.Finding
 	err = it.ForEach(func(c *object.Commit) error {
 		var fileIt *object.FileIter
@@ -58,6 +63,15 @@ func FindingsForRepository(repository *git.Repository) ([]report.Finding, error)
 			return err
 		}
 		return fileIt.ForEach(func(file *object.File) error {
+			var isBinary bool
+			isBinary, err = file.IsBinary()
+			if err != nil || isBinary || file.Size >= MaxFileSize {
+				return err
+			}
+			if _, ok := fileMap[file.Hash]; ok {
+				return nil
+			}
+			fileMap[file.Hash] = struct{}{}
 			var contents string
 			contents, err = file.Contents()
 			if err != nil {
@@ -136,7 +150,7 @@ func (s SecretsStep) SaveResult(db *scanct.Database, findings []scanct.Finding) 
 	return db.LogFindings(findings)
 }
 
-const CloneRepositoryTimeout = 60 * time.Second
+const CloneRepositoryTimeout = 30 * time.Second
 
 func ScanSecrets() {
 	scanct.RunProcessStep[scanct.Repository, scanct.Finding](SecretsStep{}, runtime.NumCPU())

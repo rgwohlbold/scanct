@@ -89,7 +89,7 @@ func main() {
 		} else {
 			for {
 				FullProcess()
-				config.NumCerts = 1000000
+				config.NumCerts = 10000000
 				scanct.ImportCertificates(&config)
 			}
 		}
