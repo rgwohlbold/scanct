@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"time"
 )
 
 func FullProcess() {
@@ -87,10 +88,18 @@ func main() {
 			scanct.ImportCertificates(&config)
 			FullProcess()
 		} else {
+			FullProcess()
+			config.NumCerts = 10000000
 			for {
-				FullProcess()
-				config.NumCerts = 10000000
+				// Make each iteration take at least 5 minutes to avoid spamming the CT logs
+				minTimeChannel := time.After(5 * time.Minute)
+				log.Info().Msg("starting daemon iteration")
+
 				scanct.ImportCertificates(&config)
+				FullProcess()
+
+				log.Info().Msg("waiting for next daemon iteration")
+				<-minTimeChannel
 			}
 		}
 	} else {

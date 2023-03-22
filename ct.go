@@ -179,7 +179,7 @@ func CTInputWorker(config *CTConfig, startChan chan<- int64) {
 	if minIndex < maxLogIndex {
 		index = minIndex - 256
 	}
-	for {
+	for index >= 0 {
 		startChan <- index
 		index -= config.GetEntriesBatchSize
 		numCerts += config.GetEntriesBatchSize
