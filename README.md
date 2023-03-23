@@ -1,13 +1,12 @@
 # scanct
 
-`scanct` uses information from [certificate transparency](https://certificate.transparency.dev/) logs to build a database of hostnames.
-Hostnames are then filtered for common software deployments.
+`scanct` searches certificate transparency logs for known self-hosted services, hoping to find exposed credentials such as AWS keys.
+See [my blog post](https://rgwohlbold.de/2023/scanct/) for a high-level overview.
 
 Currently, the following software is detected:
 
 * **GitLab**: `scanct` clones repositories and scans for secrets using [gitleaks](https://github.com/zricethezav/gitleaks).
 * **Jenkins**: `scanct` scans for open `/script` endpoints and downloads workspaces of jobs to scan for secrets with gitleaks.
-
 
 ## Installation
 
