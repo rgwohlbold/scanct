@@ -29,6 +29,4 @@ This makes it resilient to restarts, as entries that have not been fully process
 This repository was adapted from [shhgit](https://github.com/eth0izzle/shhgit) and heavily modified, removing almost all code in the progress.
 shhgit is licensed under MIT see <https://github.com/eth0izzle/shhgit/blob/master/LICENSE> for details.
 
-## Acknowledgements
-
-* Thanks to @lukasrad02 for the idea and for implementing the GitLab scanner
+Thanks to Lukas Radermacher ([lukasrad02](https://github.com/lukasrad02)) and Tyron Franzke for initially implementing the GitLab scanner into `shhgit`.
